@@ -96,7 +96,7 @@ impl ParseEnvironment {
 		qquote! {
 			{
 				let ts: #path_proc_macro2::TokenStream = #s.parse().expect("Invalid literal str");
-				#stream_id.extend(ts.into_iter().map(|t| {
+				#stream_id.extend(ts.into_iter().map(|mut t| {
 					t.set_span(#span);
 					t
 				}));

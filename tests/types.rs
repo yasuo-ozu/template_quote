@@ -104,3 +104,14 @@ fn test_cow() {
 	let tokens = quote!( #owned #borrowed );
 	assert_eq!("owned borrowed", tokens.to_string());
 }
+
+#[test]
+fn test_literal() {
+	let tokens = quote! {
+		"123" 12i34 56 'c' r#id  r"abc" r#"def"#
+	};
+	assert_eq!(
+		"\"123\" 12i34 56 'c' r#id r\"abc\" r#\"def\"#",
+		tokens.to_string()
+	);
+}
