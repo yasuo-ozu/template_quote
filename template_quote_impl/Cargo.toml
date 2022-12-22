@@ -2,6 +2,12 @@
 name = "template-quote-impl"
 version = "0.1.0"
 edition = "2021"
+authors = ["Yasuo Ozu <yasuo@ozu.email>"]
+description = "A new-fasioned quote! macro implementation with pretty template-engine like syntax"
+license = "MIT"
+keywords = ["syn", "quote", "proc-macro", "macros"]
+categories = ["development-tools::procedural-macro-helpers"]
+repository = "https://github.com/yasuo-ozu/template_quote"
 
 [lib]
 proc-macro = true
