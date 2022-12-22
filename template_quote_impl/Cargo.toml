@@ -1,0 +1,14 @@
+[package]
+name = "template-quote-impl"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+proc-macro = true
+
+[dependencies]
+syn = { version = "1.0.103", features = [ "full", "derive", "printing" ]}
+proc-macro2 = "1.0.47"
+quote = "1.0.21"
+proc-macro-error = "1.0.4"

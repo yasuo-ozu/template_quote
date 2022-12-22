@@ -1,0 +1,18 @@
+[package]
+name = "template-quote"
+version = "0.0.0"
+edition = "2021"
+authors = ["Yasuo Ozu <yasuo@ozu.email>"]
+description = "A new-fasioned quote! macro implementation with pretty template-engine like syntax"
+license = "MIT"
+keywords = ["syn", "quote", "proc-macro"]
+categories = ["development-tools::procedural-macro-helpers"]
+repository = "https://github.com/yasuo-ozu/template_quote"
+
+
+[dependencies]
+template-quote-impl = { path = "./template_quote_impl" }
+proc-quote = "0.4.0"
+
+[dev-dependencies]
+proc-macro2 = "1.0.47"
