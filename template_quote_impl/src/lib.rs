@@ -4,9 +4,9 @@ extern crate syn;
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use proc_macro2::{Delimiter, Literal, Punct, Spacing, TokenTree};
+use proc_macro2::{Delimiter, Literal, Punct, Spacing, Span, TokenTree};
 use proc_macro_error::ResultExt;
-use quote::{quote as qquote, TokenStreamExt};
+use quote::{quote as qquote, quote_spanned as qquote_spanned, TokenStreamExt};
 use std::collections::{HashSet, VecDeque};
 use syn::{parse_quote, Expr, Ident, Path, Token};
 
@@ -17,6 +17,7 @@ struct ParseEnvironment {
 	path_core: Path,
 	id_stream: Ident,
 	id_repeat: Ident,
+	id_inline_expr: String,
 }
 
 impl syn::parse::Parse for ParseEnvironment {
@@ -65,6 +66,7 @@ impl core::default::Default for ParseEnvironment {
 			path_core: parse_quote! { ::core },
 			id_stream: parse_quote! { __stream },
 			id_repeat: parse_quote! { __Repeat },
+			id_inline_expr: "__inline_".to_owned(),
 		}
 	}
 }
@@ -171,39 +173,71 @@ impl ParseEnvironment {
 		input: VecDeque<TokenTree>,
 		vals: &mut HashSet<Ident>,
 		sep: Option<Punct>,
+		inline_expr_dict: &mut Vec<(Ident, TokenStream2, Span)>,
 	) -> TokenStream2 {
-		let inner = self.parse_inner(input, vals);
+		fn collect_ident(input: TokenStream2) -> Vec<Ident> {
+			let mut ret = Vec::new();
+			for tt in input.into_iter() {
+				match tt {
+					TokenTree::Group(g) if g.delimiter() == Delimiter::Parenthesis => {
+						ret.extend(collect_ident(g.stream()));
+					}
+					TokenTree::Ident(id) => ret.push(id),
+					_ => (),
+				}
+			}
+			ret
+		}
+		let inner = self.parse_inner(input, vals, inline_expr_dict);
 		let cond = cond.into_iter().collect::<Vec<_>>();
-		let is_if_or_else = match cond.get(0) {
+		match cond.get(0) {
 			Some(TokenTree::Ident(id)) if &id.to_string() == "if" || &id.to_string() == "else" => {
 				if sep.is_some() {
 					panic!("Separator should not be specified in if conditional")
 				} else {
-					true
+					return qquote! {
+						#(#cond)* { #inner }
+					};
 				}
 			}
-			_ => false,
-		};
-		if is_if_or_else {
-			qquote! {
-				#(#cond)* { #inner }
-			}
-		} else {
-			let code_sep = sep
-				.into_iter()
-				.map(|sep| self.emit_punct(&sep))
-				.collect::<Vec<_>>();
-			let val_nam = code_sep.iter().map(|_| qquote! { __i }).collect::<Vec<_>>();
-			qquote! {
-				{
-					#( let mut #val_nam = false; )*
-					#(#cond)* {
-						#(
-							if #val_nam { #code_sep }
-							#val_nam = true;
-						)*
-						#inner
+			Some(TokenTree::Ident(id)) if id.to_string() == "let" => match cond.get(2) {
+				Some(TokenTree::Punct(p)) if p.as_char() == '=' => {
+					let ids = match cond.get(1).unwrap() {
+						TokenTree::Group(g) if g.delimiter() == Delimiter::Parenthesis => {
+							collect_ident(g.stream())
+						}
+						TokenTree::Ident(id) => vec![id.clone()],
+						_ => panic!("Unsupported let conditional"),
+					};
+					for id in ids {
+						vals.remove(&id);
 					}
+					if sep.is_some() {
+						panic!("Separator should not be specified in let conditional")
+					} else {
+						return qquote! {
+							{#(#cond)*; { #inner } }
+						};
+					}
+				}
+				_ => panic!("Let conditional format error"),
+			},
+			_ => (),
+		};
+		let code_sep = sep
+			.into_iter()
+			.map(|sep| self.emit_punct(&sep))
+			.collect::<Vec<_>>();
+		let val_nam = code_sep.iter().map(|_| qquote! { __i }).collect::<Vec<_>>();
+		qquote! {
+			{
+				#( let mut #val_nam = false; )*
+				#(#cond)* {
+					#(
+						if #val_nam { #code_sep }
+						#val_nam = true;
+					)*
+					#inner
 				}
 			}
 		}
@@ -214,6 +248,7 @@ impl ParseEnvironment {
 		input: VecDeque<TokenTree>,
 		vals: &mut HashSet<Ident>,
 		sep: Option<Punct>,
+		inline_expr_dict: &mut Vec<(Ident, TokenStream2, Span)>,
 	) -> TokenStream2 {
 		let Self {
 			path_quote,
@@ -221,7 +256,7 @@ impl ParseEnvironment {
 			..
 		} = self;
 		let mut inner_vals = HashSet::new();
-		let inner_output = self.parse_inner(input, &mut inner_vals);
+		let inner_output = self.parse_inner(input, &mut inner_vals, inline_expr_dict);
 		let code_sep = sep.map(|sep| self.emit_punct(&Punct::new(sep.as_char(), Spacing::Alone)));
 		let val_nam = code_sep
 			.as_ref()
@@ -265,10 +300,20 @@ impl ParseEnvironment {
 			..
 		} = self;
 		let mut hs = HashSet::new();
-		let result = self.parse_inner(input.into_iter().collect(), &mut hs);
+		let mut dict = Vec::new();
+		let result = self.parse_inner(input.into_iter().collect(), &mut hs, &mut dict);
+		let inline_vals_code =
+			dict.into_iter()
+				.fold(TokenStream2::new(), |acc, (id, inner, span)| {
+					qquote_spanned! { span =>
+						#acc
+						let #id = { #inner };
+					}
+				});
 		qquote! {
 			{
 				let mut #id_stream= #path_proc_macro2::TokenStream::new();
+				#inline_vals_code
 				{ #result }
 				#id_stream
 			}
@@ -279,6 +324,7 @@ impl ParseEnvironment {
 		&self,
 		mut input: VecDeque<TokenTree>,
 		vals: &mut HashSet<Ident>,
+		inline_expr_dict: &mut Vec<(Ident, TokenStream2, Span)>,
 	) -> TokenStream2 {
 		let Self {
 			path_quote,
@@ -290,7 +336,7 @@ impl ParseEnvironment {
 			match token {
 				TokenTree::Group(group) => {
 					let inner = group.stream().into_iter().collect();
-					let result = self.parse_inner(inner, vals);
+					let result = self.parse_inner(inner, vals, inline_expr_dict);
 					let result = self.emit_group(&group.delimiter(), result);
 					output.append_all(result);
 				}
@@ -313,12 +359,23 @@ impl ParseEnvironment {
 							_ => true,
 						};
 						if is_expr {
+							let inline_expr_name =
+								format!("{}{}", self.id_inline_expr, inline_expr_dict.len());
+							let inline_expr_id = Ident::new(&inline_expr_name, group.span());
 							output.append_all(qquote! {
-								#[allow(unused_braces)]
-								<_ as #path_quote::ToTokens>::to_tokens(#group, &mut #id_stream);
+								<_ as #path_quote::ToTokens>::to_tokens(&#inline_expr_id, &mut #id_stream);
 							});
+							vals.insert(inline_expr_id.clone());
+							inline_expr_dict.push((
+								inline_expr_id,
+								group.stream().into_iter().collect(),
+								group.span(),
+							));
 						} else {
-							output.append_all(group.stream());
+							let stream = group.stream();
+							output.append_all(qquote! {
+								{ #stream }
+							});
 						}
 					}
 					('#', Some(TokenTree::Group(group)))
@@ -334,6 +391,7 @@ impl ParseEnvironment {
 									group2.stream().into_iter().collect(),
 									vals,
 									None,
+									inline_expr_dict,
 								));
 							}
 							// # ( ... ) *
@@ -342,6 +400,7 @@ impl ParseEnvironment {
 									group.stream().into_iter().collect(),
 									vals,
 									None,
+									inline_expr_dict,
 								)),
 							Some(TokenTree::Punct(punct0)) => match input.pop_front() {
 								// # ( ... ) [SEP] *
@@ -350,6 +409,7 @@ impl ParseEnvironment {
 										group.stream().into_iter().collect(),
 										vals,
 										Some(punct0),
+										inline_expr_dict,
 									)),
 								// # ( ... ) [SEP] { ... }
 								Some(TokenTree::Group(group2))
@@ -360,6 +420,7 @@ impl ParseEnvironment {
 										group2.stream().into_iter().collect(),
 										vals,
 										Some(punct0),
+										inline_expr_dict,
 									));
 								}
 								o => {

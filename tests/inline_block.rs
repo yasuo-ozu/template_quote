@@ -4,10 +4,10 @@ use template_quote::quote;
 
 #[test]
 fn test_block_expr() {
-	let v = vec![1, 2, 3];
+	let v = (vec![1, 2, 3], vec!["1", "2", "3"]);
 	let tokens = quote! {
 		#(
-			#v => #{ format!("{}", v).as_str() }
+			#{ v.0 } => #{ v.1 }
 		)*
 	};
 	assert_eq!(

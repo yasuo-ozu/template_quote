@@ -41,6 +41,24 @@ fn test_conditional_for() {
 }
 
 #[test]
+fn test_conditional_let() {
+	let v = vec![1, 2, 3];
+	let b = vec![true];
+	let tokens = quote! {
+		#(
+			#(let (i, s) = (&v, v.iter().map(|i| i.to_string()).collect::<Vec<_>>())){
+				#(#i is #s),*
+			}
+			#b
+		)*
+	};
+	assert_eq!(
+		"1i32 is \"1\" , 2i32 is \"2\" , 3i32 is \"3\" true",
+		tokens.to_string()
+	);
+}
+
+#[test]
 fn test_conditional_while() {
 	let mut v = vec![1, 2, 3].into_iter();
 	let tokens = quote! {
