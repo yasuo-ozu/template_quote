@@ -11,7 +11,7 @@ repository = "https://github.com/yasuo-ozu/template_quote"
 
 
 [dependencies]
-template-quote-impl = { path = "./template_quote_impl" }
+template-quote-impl = { path = "./template_quote_impl", version = "0.1.0" }
 proc-quote = "0.4.0"
 
 [dev-dependencies]
