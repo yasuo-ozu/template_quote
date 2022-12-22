@@ -4,7 +4,7 @@ extern crate syn;
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use proc_macro2::{Delimiter, Literal, Punct, Spacing, Span, TokenTree};
+use proc_macro2::{Delimiter, Literal, Punct, Spacing, TokenTree};
 use proc_macro_error::ResultExt;
 use quote::{quote as qquote, TokenStreamExt};
 use std::collections::{HashSet, VecDeque};
@@ -15,6 +15,8 @@ struct ParseEnvironment {
 	path_proc_macro2: Path,
 	path_quote: Path,
 	path_core: Path,
+	id_stream: Ident,
+	id_repeat: Ident,
 }
 
 impl syn::parse::Parse for ParseEnvironment {
@@ -61,42 +63,46 @@ impl core::default::Default for ParseEnvironment {
 			path_proc_macro2: parse_quote! { ::proc_macro2 },
 			path_quote: parse_quote! { ::template_quote },
 			path_core: parse_quote! { ::core },
+			id_stream: parse_quote! { __stream },
+			id_repeat: parse_quote! { __Repeat },
 		}
 	}
 }
 
 impl ParseEnvironment {
-	fn emit_ident(&self, ident: &Ident, stream_id: &Ident) -> TokenStream2 {
+	fn emit_ident(&self, ident: &Ident) -> TokenStream2 {
 		let Self {
 			span,
 			path_proc_macro2,
 			path_quote,
+			id_stream,
 			..
 		} = self;
 		let s = ident.to_string();
 		if s.starts_with("r#") {
 			let s = &s[2..];
 			qquote! {
-				<_ as #path_quote::ToTokens>::to_tokens(&#path_proc_macro2::Ident::new_raw(#s, (#span)), &mut #stream_id);
+				<_ as #path_quote::ToTokens>::to_tokens(&#path_proc_macro2::Ident::new_raw(#s, (#span)), &mut #id_stream);
 			}
 		} else {
 			qquote! {
-				<_ as #path_quote::ToTokens>::to_tokens(&#path_proc_macro2::Ident::new(#s, (#span)), &mut #stream_id);
+				<_ as #path_quote::ToTokens>::to_tokens(&#path_proc_macro2::Ident::new(#s, (#span)), &mut #id_stream);
 			}
 		}
 	}
 
-	fn emit_literal(&self, lit: &Literal, stream_id: &Ident) -> TokenStream2 {
+	fn emit_literal(&self, lit: &Literal) -> TokenStream2 {
 		let Self {
 			span,
 			path_proc_macro2,
+			id_stream,
 			..
 		} = self;
 		let s = lit.to_string();
 		qquote! {
 			{
 				let ts: #path_proc_macro2::TokenStream = #s.parse().expect("Invalid literal str");
-				#stream_id.extend(ts.into_iter().map(|mut t| {
+				#id_stream.extend(ts.into_iter().map(|mut t| {
 					t.set_span(#span);
 					t
 				}));
@@ -104,11 +110,12 @@ impl ParseEnvironment {
 		}
 	}
 
-	fn emit_punct(&self, punct: &Punct, stream_id: &Ident) -> TokenStream2 {
+	fn emit_punct(&self, punct: &Punct) -> TokenStream2 {
 		let Self {
 			span,
 			path_proc_macro2,
 			path_quote,
+			id_stream,
 			..
 		} = self;
 		let p = punct.as_char();
@@ -121,20 +128,16 @@ impl ParseEnvironment {
 				let mut p = #path_proc_macro2::Punct::new(#p, #spacing);
 				p.set_span(#span);
 				p
-			}, &mut #stream_id);
+			}, &mut #id_stream);
 		}
 	}
 
-	fn emit_group(
-		&self,
-		delim: &Delimiter,
-		inner: TokenStream2,
-		stream_id: &Ident,
-	) -> TokenStream2 {
+	fn emit_group(&self, delim: &Delimiter, inner: TokenStream2) -> TokenStream2 {
 		let Self {
 			span,
 			path_proc_macro2,
 			path_core,
+			id_stream,
 			..
 		} = self;
 		let delim = match delim {
@@ -144,14 +147,14 @@ impl ParseEnvironment {
 			Delimiter::None => qquote! { #path_proc_macro2::Delimiter::None },
 		};
 		qquote! {
-			#stream_id.extend(
+			#id_stream.extend(
 				#path_core::option::Option::Some(
 					#path_proc_macro2::TokenTree::Group(
 						{
 							let mut g = #path_proc_macro2::Group::new(#delim, {
-								let mut #stream_id = #path_proc_macro2::TokenStream::new();
+								let mut #id_stream = #path_proc_macro2::TokenStream::new();
 								{ #inner }
-								#stream_id
+								#id_stream
 							});
 							g.set_span(#span);
 							g
@@ -168,9 +171,8 @@ impl ParseEnvironment {
 		input: VecDeque<TokenTree>,
 		vals: &mut HashSet<Ident>,
 		sep: Option<Punct>,
-		stream_id: &Ident,
 	) -> TokenStream2 {
-		let inner = self.parse_inner(input, vals, stream_id);
+		let inner = self.parse_inner(input, vals);
 		let cond = cond.into_iter().collect::<Vec<_>>();
 		let is_if_or_else = match cond.get(0) {
 			Some(TokenTree::Ident(id)) if &id.to_string() == "if" || &id.to_string() == "else" => {
@@ -189,7 +191,7 @@ impl ParseEnvironment {
 		} else {
 			let code_sep = sep
 				.into_iter()
-				.map(|sep| self.emit_punct(&sep, stream_id))
+				.map(|sep| self.emit_punct(&sep))
 				.collect::<Vec<_>>();
 			let val_nam = code_sep.iter().map(|_| qquote! { __i }).collect::<Vec<_>>();
 			qquote! {
@@ -212,13 +214,15 @@ impl ParseEnvironment {
 		input: VecDeque<TokenTree>,
 		vals: &mut HashSet<Ident>,
 		sep: Option<Punct>,
-		stream_id: &Ident,
 	) -> TokenStream2 {
-		let path_quote = &self.path_quote;
+		let Self {
+			path_quote,
+			id_repeat,
+			..
+		} = self;
 		let mut inner_vals = HashSet::new();
-		let inner_output = self.parse_inner(input, &mut inner_vals, stream_id);
-		let code_sep =
-			sep.map(|sep| self.emit_punct(&Punct::new(sep.as_char(), Spacing::Alone), stream_id));
+		let inner_output = self.parse_inner(input, &mut inner_vals);
+		let code_sep = sep.map(|sep| self.emit_punct(&Punct::new(sep.as_char(), Spacing::Alone)));
 		let val_nam = code_sep
 			.as_ref()
 			.map(|_| qquote! { __i })
@@ -242,7 +246,7 @@ impl ParseEnvironment {
 		qquote! {
 			{
 				#(let mut #val_nam = false;)*
-				use #path_quote::Repeat as __Repeat;
+				use #path_quote::Repeat as #id_repeat;
 				for #idents_in_tuple in #first .__proc_quote__as_repeat() #(#zip_iterators)* {
 					#(
 						if #val_nam { #code_sep }
@@ -256,16 +260,17 @@ impl ParseEnvironment {
 
 	fn parse(&self, input: TokenStream2) -> TokenStream2 {
 		let Self {
-			path_proc_macro2, ..
+			path_proc_macro2,
+			id_stream,
+			..
 		} = self;
 		let mut hs = HashSet::new();
-		let stream_id = Ident::new("__stream", Span::call_site());
-		let result = self.parse_inner(input.into_iter().collect(), &mut hs, &stream_id);
+		let result = self.parse_inner(input.into_iter().collect(), &mut hs);
 		qquote! {
 			{
-				let mut #stream_id = #path_proc_macro2::TokenStream::new();
+				let mut #id_stream= #path_proc_macro2::TokenStream::new();
 				{ #result }
-				#stream_id
+				#id_stream
 			}
 		}
 	}
@@ -274,16 +279,19 @@ impl ParseEnvironment {
 		&self,
 		mut input: VecDeque<TokenTree>,
 		vals: &mut HashSet<Ident>,
-		stream_id: &Ident,
 	) -> TokenStream2 {
-		let Self { path_quote, .. } = self;
+		let Self {
+			path_quote,
+			id_stream,
+			..
+		} = self;
 		let mut output = TokenStream2::new();
 		while let Some(token) = input.pop_front() {
 			match token {
 				TokenTree::Group(group) => {
 					let inner = group.stream().into_iter().collect();
-					let result = self.parse_inner(inner, vals, stream_id);
-					let result = self.emit_group(&group.delimiter(), result, stream_id);
+					let result = self.parse_inner(inner, vals);
+					let result = self.emit_group(&group.delimiter(), result);
 					output.append_all(result);
 				}
 				TokenTree::Punct(punct) => match (punct.as_char(), input.pop_front()) {
@@ -291,7 +299,7 @@ impl ParseEnvironment {
 					('#', Some(TokenTree::Ident(ident))) => {
 						vals.insert(ident.clone());
 						output.append_all(
-							qquote! { <_ as #path_quote::ToTokens>::to_tokens(&#ident, &mut #stream_id); },
+							qquote! { <_ as #path_quote::ToTokens>::to_tokens(&#ident, &mut #id_stream); },
 						);
 					}
 					// # { ... }
@@ -307,7 +315,7 @@ impl ParseEnvironment {
 						if is_expr {
 							output.append_all(qquote! {
 								#[allow(unused_braces)]
-								<_ as #path_quote::ToTokens>::to_tokens(#group, &mut #stream_id);
+								<_ as #path_quote::ToTokens>::to_tokens(#group, &mut #id_stream);
 							});
 						} else {
 							output.append_all(group.stream());
@@ -326,7 +334,6 @@ impl ParseEnvironment {
 									group2.stream().into_iter().collect(),
 									vals,
 									None,
-									stream_id,
 								));
 							}
 							// # ( ... ) *
@@ -335,7 +342,6 @@ impl ParseEnvironment {
 									group.stream().into_iter().collect(),
 									vals,
 									None,
-									stream_id,
 								)),
 							Some(TokenTree::Punct(punct0)) => match input.pop_front() {
 								// # ( ... ) [SEP] *
@@ -344,7 +350,6 @@ impl ParseEnvironment {
 										group.stream().into_iter().collect(),
 										vals,
 										Some(punct0),
-										stream_id,
 									)),
 								// # ( ... ) [SEP] { ... }
 								Some(TokenTree::Group(group2))
@@ -355,7 +360,6 @@ impl ParseEnvironment {
 										group2.stream().into_iter().collect(),
 										vals,
 										Some(punct0),
-										stream_id,
 									));
 								}
 								o => {
@@ -364,7 +368,7 @@ impl ParseEnvironment {
 									}
 									input.push_front(TokenTree::Punct(punct0));
 									input.push_front(TokenTree::Group(group));
-									output.append_all(self.emit_punct(&punct, stream_id));
+									output.append_all(self.emit_punct(&punct));
 								}
 							},
 							o => {
@@ -372,7 +376,7 @@ impl ParseEnvironment {
 									input.push_front(o)
 								}
 								input.push_front(TokenTree::Group(group));
-								output.append_all(self.emit_punct(&punct, stream_id));
+								output.append_all(self.emit_punct(&punct));
 							}
 						}
 					}
@@ -380,11 +384,11 @@ impl ParseEnvironment {
 						if let Some(o) = o {
 							input.push_front(o);
 						}
-						output.append_all(self.emit_punct(&punct, stream_id));
+						output.append_all(self.emit_punct(&punct));
 					}
 				},
-				TokenTree::Ident(o) => output.append_all(self.emit_ident(&o, stream_id)),
-				TokenTree::Literal(o) => output.append_all(self.emit_literal(&o, stream_id)),
+				TokenTree::Ident(o) => output.append_all(self.emit_ident(&o)),
+				TokenTree::Literal(o) => output.append_all(self.emit_literal(&o)),
 			}
 		}
 		output
