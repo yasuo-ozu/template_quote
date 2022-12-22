@@ -20,7 +20,7 @@ edition = "2021"
 proc-macro = true
 
 [dependencies]
-template-quote = "0.1"
+template-quote = "0.2"
 proc-macro2 = "1.0"
 ```
 
