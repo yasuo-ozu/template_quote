@@ -310,7 +310,7 @@ impl ParseEnvironment {
 								<_ as #path_quote::ToTokens>::to_tokens(#group, &mut #stream_id);
 							});
 						} else {
-							output.append(group);
+							output.append_all(group.stream());
 						}
 					}
 					('#', Some(TokenTree::Group(group)))
