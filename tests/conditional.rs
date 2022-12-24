@@ -38,6 +38,20 @@ fn test_conditional_for() {
 		"1i32 is \"one\" , 2i32 is \"two\" , 3i32 is \"three\"",
 		tokens.to_string()
 	);
+	let v = vec![vec![1, 2, 3], vec![4, 5, 6]];
+	let vv = vec![1];
+	let tokens = quote! {
+		#(
+			#(for inner in &v);{
+				[#( #inner ),*]
+			}
+			#vv
+		)*
+	};
+	assert_eq!(
+		"[1i32 , 2i32 , 3i32] ; [4i32 , 5i32 , 6i32] 1i32",
+		tokens.to_string()
+	);
 }
 
 #[test]
@@ -56,6 +70,31 @@ fn test_conditional_let() {
 		"1i32 is \"1\" , 2i32 is \"2\" , 3i32 is \"3\" true",
 		tokens.to_string()
 	);
+	struct STuple(i32, i32);
+	struct SStruct {
+		a: i32,
+		b: i32,
+		_c: i32,
+	}
+	let vv = vec![true];
+	let tup = STuple(123, 456);
+	let sct = SStruct {
+		a: 789,
+		b: 12,
+		_c: 345,
+	};
+	let tokens = quote! {
+		#(
+			#(let STuple(a, ..) = tup) {
+				#a
+			}
+			#(let SStruct{ a: d, b, .. } = sct) {
+				#d, #b
+				#vv
+			}
+		)*
+	};
+	assert_eq!("123i32 789i32 , 12i32 true", tokens.to_string());
 }
 
 #[test]

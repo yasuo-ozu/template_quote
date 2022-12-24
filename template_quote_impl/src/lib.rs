@@ -223,7 +223,7 @@ impl ParseEnvironment {
 			) -> Result<(), ()> {
 				while input.len() > 0 && !eat_terminator(&mut input) {
 					ret.extend(collect_ident(&mut input)?);
-					if !eat_comma(&mut input) && input.len() > 0 {
+					if input.len() > 0 && !eat_comma(&mut input) {
 						return Err(());
 					}
 				}
@@ -272,7 +272,7 @@ impl ParseEnvironment {
 							},
 							_ => return Err(()),
 						}
-						if !eat_comma(input) && input.len() > 0 {
+						if inner.len() > 0 && !eat_comma(&mut inner) {
 							return Err(());
 						}
 					}
