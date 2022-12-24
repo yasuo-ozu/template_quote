@@ -17,6 +17,7 @@ struct ParseEnvironment {
 	path_core: Path,
 	id_stream: Ident,
 	id_repeat: Ident,
+	id_counter: Ident,
 	id_inline_expr: String,
 }
 
@@ -67,6 +68,7 @@ impl core::default::Default for ParseEnvironment {
 			id_stream: parse_quote! { __stream },
 			id_repeat: parse_quote! { __Repeat },
 			id_inline_expr: "__inline_".to_owned(),
+			id_counter: parse_quote! { __i },
 		}
 	}
 }
@@ -169,74 +171,196 @@ impl ParseEnvironment {
 
 	fn parse_conditional(
 		&self,
-		cond: TokenStream2,
+		conditional: TokenStream2,
 		input: VecDeque<TokenTree>,
 		vals: &mut HashSet<Ident>,
 		sep: Option<Punct>,
 		inline_expr_dict: &mut Vec<(Ident, TokenStream2, Span)>,
 	) -> TokenStream2 {
-		fn collect_ident(input: TokenStream2) -> Vec<Ident> {
-			let mut ret = Vec::new();
-			for tt in input.into_iter() {
-				match tt {
-					TokenTree::Group(g) if g.delimiter() == Delimiter::Parenthesis => {
-						ret.extend(collect_ident(g.stream()));
-					}
-					TokenTree::Ident(id) => ret.push(id),
-					_ => (),
+		fn eat_terminator(input: &mut VecDeque<TokenTree>) -> bool {
+			match (input.pop_front(), input.pop_front(), input.pop_front()) {
+				(Some(TokenTree::Punct(p1)), Some(TokenTree::Punct(p2)), None)
+					if p1.as_char() == '.'
+						&& p2.as_char() == '.' && p1.spacing() == Spacing::Joint
+						&& p2.spacing() == Spacing::Alone =>
+				{
+					return true;
 				}
+				(Some(tt1), Some(tt2), Some(tt3)) => {
+					input.push_front(tt3);
+					input.push_front(tt2);
+					input.push_front(tt1);
+				}
+				(Some(tt1), Some(tt2), None) => {
+					input.push_front(tt2);
+					input.push_front(tt1);
+				}
+				(Some(tt1), None, None) => {
+					input.push_front(tt1);
+				}
+				_ => (),
 			}
-			ret
+			false
 		}
-		let inner = self.parse_inner(input, vals, inline_expr_dict);
-		let cond = cond.into_iter().collect::<Vec<_>>();
-		match cond.get(0) {
-			Some(TokenTree::Ident(id)) if &id.to_string() == "if" || &id.to_string() == "else" => {
-				if sep.is_some() {
-					panic!("Separator should not be specified in if conditional")
-				} else {
-					return qquote! {
-						#(#cond)* { #inner }
-					};
+		fn eat_comma(input: &mut VecDeque<TokenTree>) -> bool {
+			match input.pop_front() {
+				Some(TokenTree::Punct(p))
+					if p.as_char() == ',' && p.spacing() == Spacing::Alone =>
+				{
+					true
+				}
+				Some(tt) => {
+					input.push_front(tt);
+					false
+				}
+				_ => false,
+			}
+		}
+		fn collect_ident(input: &mut VecDeque<TokenTree>) -> Result<Vec<Ident>, ()> {
+			fn collect_paren_stream(
+				mut input: VecDeque<TokenTree>,
+				ret: &mut Vec<Ident>,
+			) -> Result<(), ()> {
+				while input.len() > 0 && !eat_terminator(&mut input) {
+					ret.extend(collect_ident(&mut input)?);
+					if !eat_comma(&mut input) && input.len() > 0 {
+						return Err(());
+					}
+				}
+				Ok(())
+			}
+			let mut ret = Vec::new();
+			match (input.pop_front(), input.pop_front()) {
+				// Parse `let (..) = ..`
+				(Some(TokenTree::Group(g)), opt) if g.delimiter() == Delimiter::Parenthesis => {
+					collect_paren_stream(g.stream().into_iter().collect(), &mut ret)?;
+					if let Some(tt1) = opt {
+						input.push_front(tt1);
+					}
+					Ok(ret)
+				}
+				// Parse `let Ident ( .. ) = ..`
+				(Some(TokenTree::Ident(_)), Some(TokenTree::Group(g)))
+					if g.delimiter() == Delimiter::Parenthesis =>
+				{
+					collect_paren_stream(g.stream().into_iter().collect(), &mut ret)?;
+					Ok(ret)
+				}
+				// Parse `let Ident { key: value, value2, ... } = ..`
+				(Some(TokenTree::Ident(_)), Some(TokenTree::Group(g)))
+					if g.delimiter() == Delimiter::Brace =>
+				{
+					let mut inner: VecDeque<TokenTree> = g.stream().into_iter().collect();
+					while inner.len() > 0 && !eat_terminator(&mut inner) {
+						match inner.pop_front().unwrap() {
+							TokenTree::Ident(key) => match (inner.pop_front(), inner.pop_front()) {
+								(Some(TokenTree::Punct(colon)), Some(TokenTree::Ident(value)))
+									if colon.as_char() == ':'
+										&& colon.spacing() == Spacing::Alone =>
+								{
+									ret.push(value);
+								}
+								(item1, item2) => {
+									if let Some(tt2) = item2 {
+										inner.push_front(tt2);
+									}
+									if let Some(tt1) = item1 {
+										inner.push_front(tt1);
+									}
+									ret.push(key)
+								}
+							},
+							_ => return Err(()),
+						}
+						if !eat_comma(input) && input.len() > 0 {
+							return Err(());
+						}
+					}
+					Ok(ret)
+				}
+				// Parse `let ident = ..`
+				(Some(TokenTree::Ident(id)), opt) => {
+					ret.push(id);
+					if let Some(tt1) = opt {
+						input.push_front(tt1);
+					}
+					Ok(ret)
+				}
+				_ => Err(()),
+			}
+		}
+		fn collect_ident_eq(input: &mut VecDeque<TokenTree>) -> Result<Vec<Ident>, ()> {
+			let v = collect_ident(input)?;
+			match input.pop_front() {
+				Some(TokenTree::Punct(eq))
+					if eq.as_char() == '=' && eq.spacing() == Spacing::Alone =>
+				{
+					Ok(v)
+				}
+				_ => Err(()),
+			}
+		}
+		let mut cond: VecDeque<TokenTree> = conditional.clone().into_iter().collect();
+		let (ids, cond) = match (cond.pop_front(), sep.is_some()) {
+			(Some(TokenTree::Ident(id)), false) if &id.to_string() == "if" => {
+				match cond.pop_front() {
+					Some(TokenTree::Ident(id_let)) if &id_let.to_string() == "let" => (
+						collect_ident_eq(&mut cond).expect("Bad format in if-let conditional"),
+						conditional,
+					),
+					_ => (vec![], conditional),
 				}
 			}
-			Some(TokenTree::Ident(id)) if id.to_string() == "let" => match cond.get(2) {
-				Some(TokenTree::Punct(p)) if p.as_char() == '=' => {
-					let ids = match cond.get(1).unwrap() {
-						TokenTree::Group(g) if g.delimiter() == Delimiter::Parenthesis => {
-							collect_ident(g.stream())
-						}
-						TokenTree::Ident(id) => vec![id.clone()],
-						_ => panic!("Unsupported let conditional"),
-					};
-					for id in ids {
-						vals.remove(&id);
+			(Some(TokenTree::Ident(id)), false) if &id.to_string() == "else" => {
+				if cond.len() == 0 {
+					(vec![], conditional) // no more idents after `else`
+				} else {
+					panic!("Bad format in else conditional")
+				}
+			}
+			(Some(TokenTree::Ident(id)), false) if id.to_string() == "let" => (
+				collect_ident_eq(&mut cond).expect("Bad format in let binding"),
+				qquote! {#conditional ;},
+			),
+			(Some(TokenTree::Ident(id)), _) if id.to_string() == "while" => {
+				match cond.pop_front() {
+					Some(TokenTree::Ident(id_let)) if &id_let.to_string() == "let" => (
+						collect_ident_eq(&mut cond).expect("Bad format in while-let loop"),
+						conditional,
+					),
+					_ => (vec![], conditional),
+				}
+			}
+			(Some(TokenTree::Ident(id)), _) if id.to_string() == "for" => {
+				match (collect_ident(&mut cond), cond.pop_front()) {
+					(Ok(v), Some(TokenTree::Ident(id_in))) if &id_in.to_string() == "in" => {
+						(v, conditional)
 					}
-					if sep.is_some() {
-						panic!("Separator should not be specified in let conditional")
-					} else {
-						return qquote! {
-							{#(#cond)*; { #inner } }
-						};
+					_ => panic!("Bad format in for loop"),
+				}
+			}
+			_ => panic!("Bad format in conditional"),
+		};
+		let inner = self.parse_inner(input, vals, inline_expr_dict);
+		for id in ids {
+			vals.remove(&id);
+		}
+		if let Some(sep) = sep {
+			let code_sep = self.emit_punct(&sep);
+			let id_counter = &self.id_counter;
+			qquote! {
+				{
+					let mut #id_counter = false;
+					#cond {
+						if #id_counter { #code_sep }
+						#id_counter = true;
+						#inner
 					}
 				}
-				_ => panic!("Let conditional format error"),
-			},
-			_ => (),
-		};
-		let code_sep = sep
-			.into_iter()
-			.map(|sep| self.emit_punct(&sep))
-			.collect::<Vec<_>>();
-		let val_nam = code_sep.iter().map(|_| qquote! { __i }).collect::<Vec<_>>();
-		qquote! {
-			{
-				#( let mut #val_nam = false; )*
-				#(#cond)* {
-					#(
-						if #val_nam { #code_sep }
-						#val_nam = true;
-					)*
+			}
+		} else {
+			qquote! {
+				#cond {
 					#inner
 				}
 			}
@@ -260,7 +384,7 @@ impl ParseEnvironment {
 		let code_sep = sep.map(|sep| self.emit_punct(&Punct::new(sep.as_char(), Spacing::Alone)));
 		let val_nam = code_sep
 			.as_ref()
-			.map(|_| qquote! { __i })
+			.map(|_| self.id_counter.clone())
 			.into_iter()
 			.collect::<Vec<_>>();
 		vals.extend(inner_vals.iter().cloned());
