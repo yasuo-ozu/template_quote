@@ -149,3 +149,51 @@ fn test_break() {
 	};
 	assert_eq!("1i32 2i32", tokens.to_string());
 }
+
+#[test]
+fn test_punct() {
+	let v = vec![vec![1, 2], vec![3]];
+	let tokens = quote! {
+		#(
+			#(for i in #v) {
+				#i
+			}
+		),*
+	};
+	assert_eq!("1i32 2i32 , 3i32", tokens.to_string());
+	let tokens = quote! {
+		#(
+			#(for i in #v.iter().map(|a| a + 1)) {
+				#i
+			}
+		),*
+	};
+	assert_eq!("2i32 3i32 , 4i32", tokens.to_string());
+	let v = vec![1, 2, 3];
+	let tokens = quote! {
+		#(
+			#(for i in 0..*#v) {
+				#i
+			}
+		),*
+	};
+	assert_eq!("0i32 , 0i32 1i32 , 0i32 1i32 2i32", tokens.to_string());
+	let tokens = quote! {
+		#(
+			#{#v.to_string()}
+		),*
+	};
+	assert_eq!("\"1\" , \"2\" , \"3\"", tokens.to_string());
+	let v = vec![1, 2, 3];
+	let tokens = quote! {
+		#(
+			#(if #v > &2) {
+				+ #v
+			}
+			#(else) {
+				- #v
+			}
+		)*
+	};
+	assert_eq!("- 1i32 - 2i32 + 3i32", tokens.to_string());
+}
