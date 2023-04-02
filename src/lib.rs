@@ -65,7 +65,7 @@ extern crate template_quote_impl;
 /// assert_eq!("3i32", tokens.to_string());
 /// ```
 ///
-/// The if-else is also allowed.
+/// The if-else and if-else-if is also allowed.
 ///
 /// ```
 /// # use template_quote::quote;
@@ -81,6 +81,25 @@ extern crate template_quote_impl;
 /// 	)*
 /// };
 /// assert_eq!("- 1i32 - 2i32 + 3i32", tokens.to_string());
+/// ```
+///
+/// ```
+/// # use template_quote::quote;
+/// let i = vec![1, 2, 3, 4, 5];
+/// let tokens = quote!{
+/// 	#(
+/// 		#(if i % &2 == 0) {
+/// 			+ #i
+/// 		}
+/// 		#(else if i % &3 == 0) {
+/// 			- #i
+/// 		}
+/// 		#(else) {
+/// 			#i
+/// 		}
+/// 	)*
+/// };
+/// assert_eq!("1i32 + 2i32 - 3i32 + 4i32 5i32", tokens.to_string());
 /// ```
 ///
 /// ## For syntax
@@ -102,6 +121,22 @@ extern crate template_quote_impl;
 /// assert_eq!("1i32 -> 'a' 1i32 -> 'b' 2i32 -> 'a' 2i32 -> 'b'", tokens.to_string());
 /// ```
 ///
+/// Internal loop can be replaced with interporation:
+///
+/// ```
+/// # use template_quote::quote;
+/// let v1 = vec![1, 2];
+/// let v2 = vec!['a', 'b'];
+/// let tokens = quote!{
+/// 	#(for i1 in &v1) {
+/// 		#(
+/// 			#i1 -> #v2
+/// 		)*
+/// 	}
+/// };
+/// assert_eq!("1i32 -> 'a' 1i32 -> 'b' 2i32 -> 'a' 2i32 -> 'b'", tokens.to_string());
+/// ```
+///
 /// You can also specify separator with for statement.
 ///
 /// ```
@@ -118,12 +153,13 @@ extern crate template_quote_impl;
 ///
 /// ```compile_fail
 /// # use template_quote::quote;
-/// let v = vec![1, 2];
-/// quote!{
+/// let v = vec![vec![1, 2], vec![3]];
+/// let tokens = quote!{
 /// 	#(
 /// 		#(for i in v) { #i }
-/// 	)*
+/// 	),*
 /// };
+/// assert_eq!("1i32 2i32 , 3i32", tokens.to_string());
 /// ```
 ///
 /// will fail into error because no variables is available in the interporation
@@ -142,6 +178,20 @@ extern crate template_quote_impl;
 ///    | |_^
 ///    |
 ///    = help: message: Iterative vals not found
+/// ```
+///
+/// In this case, you can use `#(for i in #v)` syntax to specify which variable
+/// to iterate with interporation:
+///
+/// ```
+/// # use template_quote::quote;
+/// let v = vec![vec![1, 2], vec![3]];
+/// let tokens = quote!{
+/// 	#(
+/// 		#(for i in #v) { #i }
+/// 	),*
+/// };
+/// assert_eq!("1i32 2i32 , 3i32", tokens.to_string());
 /// ```
 ///
 /// ## While syntax
@@ -213,6 +263,34 @@ extern crate template_quote_impl;
 /// 	}
 /// };
 /// assert_eq!("1i32 -> \"1\" 2i32 -> \"2\"", tokens.to_string());
+/// ```
+///
+/// The following example will fail to compile because it does not understand
+/// which variable to be interpolated:
+///
+/// ```compile_fail
+/// # use template_quote::quote;
+/// let v = vec![1, 2];
+/// let tokens = quote!{
+/// 	#(
+/// 		#{ v.to_string() }
+/// 	)*
+/// };
+/// assert_eq!("\"1\" \"2\"", tokens.to_string());
+/// ```
+///
+/// In this case, you can use `#i` syntax in inline expression to specify which
+/// variable to iterate with interporation syntax.
+///
+/// ```
+/// # use template_quote::quote;
+/// let v = vec![1, 2];
+/// let tokens = quote!{
+/// 	#(
+/// 		#{ #v.to_string() }
+/// 	)*
+/// };
+/// assert_eq!("\"1\" \"2\"", tokens.to_string());
 /// ```
 ///
 /// ## Inline statement

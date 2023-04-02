@@ -322,40 +322,56 @@ impl ParseEnvironment {
 		sep: Option<Punct>,
 		inline_expr_dict: &mut Vec<(Ident, TokenStream2, Span)>,
 	) -> TokenStream2 {
+		fn parse_if_inner(
+			mut cond: VecDeque<TokenTree>,
+		) -> (Vec<Ident>, Vec<Ident>, Vec<TokenTree>) {
+			let mut bak: Vec<_> = cond.iter().cloned().collect();
+			match cond.pop_front() {
+				Some(TokenTree::Ident(id_let)) if &id_let.to_string() == "let" => {
+					let removing_ids =
+						collect_ident_eq(&mut cond).expect("Bad format in if-let conditional");
+					bak.truncate(bak.len() - cond.len());
+					let (appending_ids, rem) = collect_punct_in_expr(cond);
+					bak.extend(rem);
+					(removing_ids, appending_ids, bak)
+				}
+				Some(o) => {
+					cond.push_front(o);
+					bak.truncate(bak.len() - cond.len());
+					let (appending_ids, rem) = collect_punct_in_expr(cond);
+					bak.extend(rem);
+					(vec![], appending_ids, bak)
+				}
+				None => panic!("if syntax is empty"),
+			}
+		}
 		let mut cond: VecDeque<TokenTree> = conditional.clone().into_iter().collect();
 		let cond_len = cond.len();
 		let (removing_ids, appending_ids, cond) = match (cond.pop_front(), sep.is_some()) {
 			(Some(TokenTree::Ident(id)), false) if &id.to_string() == "if" => {
+				let (removing_ids, appending_ids, rem) = parse_if_inner(cond);
+				(
+					removing_ids,
+					appending_ids,
+					Some(TokenTree::Ident(id)).into_iter().chain(rem).collect(),
+				)
+			}
+			(Some(TokenTree::Ident(id)), false) if &id.to_string() == "else" => {
 				match cond.pop_front() {
-					Some(TokenTree::Ident(id_let)) if &id_let.to_string() == "let" => {
-						let removing_ids =
-							collect_ident_eq(&mut cond).expect("Bad format in if-let conditional");
-						let n = cond_len - cond.len();
-						let (appending_ids, rem) = collect_punct_in_expr(cond);
+					// else if
+					Some(TokenTree::Ident(id_if)) if &id_if.to_string() == "if" => {
+						let (removing_ids, appending_ids, rem) = parse_if_inner(cond);
 						(
 							removing_ids,
 							appending_ids,
-							conditional.clone().into_iter().take(n).chain(rem).collect(),
+							vec![TokenTree::Ident(id), TokenTree::Ident(id_if)]
+								.into_iter()
+								.chain(rem)
+								.collect(),
 						)
 					}
-					Some(o) => {
-						cond.push_front(o);
-						let n = cond_len - cond.len();
-						let (appending_ids, rem) = collect_punct_in_expr(cond);
-						(
-							vec![],
-							appending_ids,
-							conditional.clone().into_iter().take(n).chain(rem).collect(),
-						)
-					}
-					None => panic!("if syntax is empty"),
-				}
-			}
-			(Some(TokenTree::Ident(id)), false) if &id.to_string() == "else" => {
-				if cond.len() == 0 {
-					(vec![], vec![], conditional) // no more idents after `else`
-				} else {
-					panic!("Bad format in else conditional")
+					Some(_) => panic!("Bad format in else conditional"),
+					None => (vec![], vec![], conditional),
 				}
 			}
 			(Some(TokenTree::Ident(id)), false) if id.to_string() == "let" => {
@@ -641,14 +657,12 @@ impl ParseEnvironment {
 	}
 }
 
-/// This macro is intended to use from [`template_quote::quote`].
 #[proc_macro]
 pub fn quote(input: TokenStream) -> TokenStream {
 	let env: ParseEnvironment = Default::default();
 	env.parse(input.into()).into()
 }
 
-/// This macro is intended to use from [`template_quote::quote_configured`].
 #[proc_macro]
 pub fn quote_configured(input: TokenStream) -> TokenStream {
 	let input0: TokenStream2 = input.into();
