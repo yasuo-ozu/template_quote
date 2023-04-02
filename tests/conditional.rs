@@ -116,4 +116,16 @@ fn test_conditional_while() {
 		}
 	};
 	assert_eq!("1i32 2i32", tokens.to_string());
+	let mut v = vec![vec![1, 2, 3], vec![4, 5]].into_iter();
+	let vv = vec![true];
+	let tokens = quote! {
+			{
+	#(while let Some(i) = v.next()){
+	#i
+	#{
+		if i > 1 { break; };
+	}
+	}
+	}
+		};
 }
