@@ -23,7 +23,6 @@ struct ParseEnvironment {
 	id_stream: Ident,
 	id_repeat: Ident,
 	id_counter: Ident,
-	id_inline_expr: String,
 }
 
 impl syn::parse::Parse for ParseEnvironment {
@@ -72,7 +71,6 @@ impl core::default::Default for ParseEnvironment {
 			path_core: parse_quote! { ::core },
 			id_stream: parse_quote! { __stream },
 			id_repeat: parse_quote! { __Repeat },
-			id_inline_expr: "__inline_".to_owned(),
 			id_counter: parse_quote! { __i },
 		}
 	}
@@ -487,21 +485,14 @@ impl ParseEnvironment {
 							Some(TokenTree::Punct(p)) if p.as_char() == ';' => false,
 							_ => true,
 						};
+						let stream = group.stream();
 						if is_expr {
-							let inline_expr_name =
-								format!("{}{}", self.id_inline_expr, inline_expr_dict.len());
-							let inline_expr_id = Ident::new(&inline_expr_name, group.span());
 							output.append_all(qquote! {
-								<_ as #path_quote::ToTokens>::to_tokens(&#inline_expr_id, &mut #id_stream);
+								<_ as #path_quote::ToTokens>::to_tokens(&{
+									#stream
+								}, &mut #id_stream);
 							});
-							vals.insert(inline_expr_id.clone());
-							inline_expr_dict.push((
-								inline_expr_id,
-								group.stream().into_iter().collect(),
-								group.span(),
-							));
 						} else {
-							let stream = group.stream();
 							output.append_all(qquote! {
 								{ #stream }
 							});

@@ -204,9 +204,7 @@ extern crate template_quote_impl;
 ///
 /// You can place inline expression in `quote!` macro.
 ///
-/// TODO:
-///
-/// ```compile_fail
+/// ```
 /// # use template_quote::quote;
 /// let v = vec![1, 2];
 /// let tokens = quote!{
@@ -214,21 +212,8 @@ extern crate template_quote_impl;
 /// 		#i -> #{ i.to_string() }
 /// 	}
 /// };
-/// assert_eq!("1i32 -> \"1\" , 2i32 -> \"2\"", tokens.to_string());
+/// assert_eq!("1i32 -> \"1\" 2i32 -> \"2\"", tokens.to_string());
 /// ```
-///
-/// ```compile_fail
-/// # use template_quote::quote;
-/// let v = vec![1, 2];
-/// let tokens = quote!{
-/// 	#(
-/// 		#v -> #{ v.to_string() }
-/// 	)*
-/// };
-/// assert_eq!("1i32 -> \"1\" , 2i32 -> \"2\"", tokens.to_string());
-/// ```
-///
-///
 ///
 /// ## Inline statement
 ///
