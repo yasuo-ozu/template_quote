@@ -10,6 +10,11 @@ use quote::{quote as qquote, quote_spanned as qquote_spanned, TokenStreamExt};
 use std::collections::{HashSet, VecDeque};
 use syn::{parse_quote, Expr, Ident, Path, Token};
 
+/// The parser for `quote!` macro.
+///
+/// this struct has some global configs to be initialized using
+/// `Default::default()` or `syn::parse::Parse::parse()`. User can specify
+/// configs using `quote_configured!` macro.
 struct ParseEnvironment {
 	span: Expr,
 	path_proc_macro2: Path,
@@ -580,12 +585,14 @@ impl ParseEnvironment {
 	}
 }
 
+/// This macro is intended to use from [`template_quote::quote`].
 #[proc_macro]
 pub fn quote(input: TokenStream) -> TokenStream {
 	let env: ParseEnvironment = Default::default();
 	env.parse(input.into()).into()
 }
 
+/// This macro is intended to use from [`template_quote::quote_configured`].
 #[proc_macro]
 pub fn quote_configured(input: TokenStream) -> TokenStream {
 	let input0: TokenStream2 = input.into();

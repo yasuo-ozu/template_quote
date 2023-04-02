@@ -52,6 +52,16 @@ fn test_conditional_for() {
 		"[1i32 , 2i32 , 3i32] ; [4i32 , 5i32 , 6i32] 1i32",
 		tokens.to_string()
 	);
+	#[allow(unreachable_code)]
+	let tokens = quote! {
+		#(for inner in 0..10);{
+			{
+				#inner
+				#{break;}
+			}
+		}
+	};
+	assert_eq!("", tokens.to_string());
 }
 
 #[test]
@@ -117,15 +127,25 @@ fn test_conditional_while() {
 	};
 	assert_eq!("1i32 2i32", tokens.to_string());
 	let mut v = vec![vec![1, 2, 3], vec![4, 5]].into_iter();
-	let vv = vec![true];
 	let tokens = quote! {
-			{
-	#(while let Some(i) = v.next()){
-	#i
-	#{
-		if i > 1 { break; };
-	}
-	}
-	}
-		};
+		{
+			#(while let Some(i) = v.next()){
+				#(#i),*
+				#{break;}
+			}
+		}
+	};
+	assert_eq!("{ 1i32 , 2i32 , 3i32 }", tokens.to_string());
+}
+
+#[test]
+fn test_break() {
+	let v = vec![1, 2, 3];
+	let tokens = quote! {
+		#(
+			#v
+			#{ if v >= &2 { break; }; }
+		)*
+	};
+	assert_eq!("1i32 2i32", tokens.to_string());
 }
