@@ -1,6 +1,6 @@
 [package]
 name = "template-quote-impl"
-version = "0.2.0"
+version = "0.3.0"
 edition = "2021"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
 description = "A new-fasioned quote! macro implementation with pretty template-engine like syntax"
