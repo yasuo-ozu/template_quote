@@ -1,3 +1,4 @@
+//! This create provide [`quote!`] macro.
 extern crate proc_quote;
 extern crate template_quote_impl;
 
@@ -386,7 +387,32 @@ extern crate template_quote_impl;
 /// assert_eq!(v.len(), 0);
 /// ```
 pub use template_quote_impl::quote;
+
+/// [`quote_configured!`] macro is configurable version of [`quote!`].
+///
+/// ```ignore
+/// # use template_quote::quote_configured;
+/// quote_configured! {
+/// 	{
+/// 		proc_macro2: ::proc_macro2,
+/// 		quote: ::quote,
+/// 		core: ::core,	// core crate in std
+/// 		quote: ::quote,
+/// 		span: ::some_span,
+/// 	} =>
+/// 	...
+/// };
+/// ```
 pub use template_quote_impl::quote_configured;
+
+/// [`quote_spanned!`] macro emit `TokenTree` with specified
+/// `Span`.
+///
+/// ```ignore
+/// use syn::Span;
+/// let span = Span::call_site();
+/// let tokens = quote_spanned! {span => ... };
+/// ```
 pub use template_quote_impl::quote_spanned;
 
 pub use proc_quote::Repeat;
