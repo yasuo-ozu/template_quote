@@ -197,3 +197,15 @@ fn test_punct() {
 	};
 	assert_eq!("- 1i32 - 2i32 + 3i32", tokens.to_string());
 }
+
+#[test]
+fn test_complex_assign() {
+	let v = vec![1, 2, 3];
+	let v = Some(v.as_slice());
+	let tokens = quote! {
+		#(if let Option::Some([a, b, c]) = v) {
+			#a - #b - #c
+		}
+	};
+	assert_eq!("1i32 - 2i32 - 3i32", tokens.to_string());
+}

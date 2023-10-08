@@ -126,64 +126,87 @@ fn collect_ident(input: &mut VecDeque<TokenTree>) -> Result<Vec<Ident>, ()> {
 		Ok(())
 	}
 	let mut ret = Vec::new();
-	match (input.pop_front(), input.pop_front()) {
+	match input.pop_front() {
 		// Parse `let (..) = ..`
-		(Some(TokenTree::Group(g)), opt) if g.delimiter() == Delimiter::Parenthesis => {
-			collect_paren_stream(g.stream().into_iter().collect(), &mut ret)?;
-			if let Some(tt1) = opt {
-				input.push_front(tt1);
-			}
-			Ok(ret)
-		}
-		// Parse `let Ident ( .. ) = ..`
-		(Some(TokenTree::Ident(_)), Some(TokenTree::Group(g)))
-			if g.delimiter() == Delimiter::Parenthesis =>
+		Some(TokenTree::Group(g))
+			if (g.delimiter() == Delimiter::Parenthesis || g.delimiter() == Delimiter::Bracket) =>
 		{
 			collect_paren_stream(g.stream().into_iter().collect(), &mut ret)?;
 			Ok(ret)
 		}
-		// Parse `let Ident { key: value, value2, ... } = ..`
-		(Some(TokenTree::Ident(_)), Some(TokenTree::Group(g)))
-			if g.delimiter() == Delimiter::Brace =>
-		{
-			let mut inner: VecDeque<TokenTree> = g.stream().into_iter().collect();
-			while inner.len() > 0 && !eat_terminator(&mut inner) {
-				match inner.pop_front().unwrap() {
-					TokenTree::Ident(key) => match (inner.pop_front(), inner.pop_front()) {
-						(Some(TokenTree::Punct(colon)), Some(TokenTree::Ident(value)))
-							if colon.as_char() == ':' && colon.spacing() == Spacing::Alone =>
+		Some(TokenTree::Ident(id)) => {
+			loop {
+				match input.pop_front() {
+					Some(TokenTree::Punct(colon))
+						if colon.as_char() == ':' && colon.spacing() == Spacing::Joint =>
+					{
+						if matches!(
+						input.pop_front(),
+						Some(TokenTree::Punct(colon)) if colon.as_char() == ':' && colon.spacing() == Spacing::Alone
+						) && matches!(input.pop_front(), Some(TokenTree::Ident(_)))
 						{
-							ret.push(value);
+							continue;
+						} else {
+							return Err(());
 						}
-						(item1, item2) => {
-							if let Some(tt2) = item2 {
-								inner.push_front(tt2);
-							}
-							if let Some(tt1) = item1 {
-								inner.push_front(tt1);
-							}
-							ret.push(key)
-						}
-					},
-					_ => return Err(()),
+					}
+					Some(o) => input.push_front(o),
+					None => (),
 				}
-				if inner.len() > 0 && !eat_comma(&mut inner) {
-					return Err(());
+				break;
+			}
+			match input.pop_front() {
+				// Parse `let Ident ( .. ) = ..`
+				Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Parenthesis => {
+					collect_paren_stream(g.stream().into_iter().collect(), &mut ret)?;
+					Ok(ret)
+				}
+				// Parse `let Ident { key: value, value2, ... } = ..`
+				Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => {
+					let mut inner: VecDeque<TokenTree> = g.stream().into_iter().collect();
+					while inner.len() > 0 && !eat_terminator(&mut inner) {
+						match inner.pop_front().unwrap() {
+							TokenTree::Ident(key) => match (inner.pop_front(), inner.pop_front()) {
+								(Some(TokenTree::Punct(colon)), Some(TokenTree::Ident(value)))
+									if colon.as_char() == ':'
+										&& colon.spacing() == Spacing::Alone =>
+								{
+									ret.push(value);
+								}
+								(item1, item2) => {
+									if let Some(tt2) = item2 {
+										inner.push_front(tt2);
+									}
+									if let Some(tt1) = item1 {
+										inner.push_front(tt1);
+									}
+									ret.push(key)
+								}
+							},
+							_ => return Err(()),
+						}
+						if inner.len() > 0 && !eat_comma(&mut inner) {
+							return Err(());
+						}
+					}
+					Ok(ret)
+				}
+				// Parse `let ident = ..`
+				Some(o) => {
+					input.push_front(o);
+					ret.push(id);
+					Ok(ret)
+				}
+				None => {
+					ret.push(id);
+					Ok(ret)
 				}
 			}
-			Ok(ret)
-		}
-		// Parse `let ident = ..`
-		(Some(TokenTree::Ident(id)), opt) => {
-			ret.push(id);
-			if let Some(tt1) = opt {
-				input.push_front(tt1);
-			}
-			Ok(ret)
 		}
 		_ => Err(()),
 	}
 }
+
 fn collect_ident_eq(input: &mut VecDeque<TokenTree>) -> Result<Vec<Ident>, ()> {
 	let v = collect_ident(input)?;
 	match input.pop_front() {
