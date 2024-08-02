@@ -1,9 +1,4 @@
-extern crate proc_macro2;
-extern crate proc_quote;
-extern crate template_quote;
-
 use proc_macro2::{Ident, Span};
-use proc_quote::TokenStreamExt;
 use template_quote::quote;
 
 #[test]
@@ -47,7 +42,7 @@ fn test_empty_quote() {
 fn test_append_tokens() {
 	let mut a = quote!(a);
 	let b = quote!(b);
-	a.append_all(b);
+	a.extend(b);
 	assert_eq!("a b", a.to_string());
 }
 

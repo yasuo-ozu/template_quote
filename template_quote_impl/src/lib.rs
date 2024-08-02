@@ -501,7 +501,7 @@ impl ParseEnvironment {
 		let zip_iterators = iter
 			.map(|ident| {
 				qquote! {
-					.zip(#ident .__proc_quote__as_repeat())
+					.zip(#ident .__template_quote__as_repeat())
 				}
 			})
 			.collect::<Vec<_>>();
@@ -509,7 +509,7 @@ impl ParseEnvironment {
 			{
 				#(let mut #val_nam = false;)*
 				use #path_quote::Repeat as #id_repeat;
-				for #idents_in_tuple in #first .__proc_quote__as_repeat() #(#zip_iterators)* {
+				for #idents_in_tuple in #first .__template_quote__as_repeat() #(#zip_iterators)* {
 					#(
 						if #val_nam { #code_sep }
 						#val_nam = true;

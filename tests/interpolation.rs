@@ -1,16 +1,11 @@
-extern crate proc_macro2;
-extern crate proc_quote;
-extern crate template_quote;
-
-use proc_macro2::{Ident, Span, TokenStream};
-use proc_quote::TokenStreamExt;
+use proc_macro2::{Ident, Span, TokenStream, TokenTree};
 use template_quote::quote;
 
 struct X;
 
-impl proc_quote::ToTokens for X {
+impl template_quote::ToTokens for X {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
-		tokens.append(Ident::new("X", Span::call_site()));
+		tokens.extend(Some(TokenTree::Ident(Ident::new("X", Span::call_site()))));
 	}
 }
 

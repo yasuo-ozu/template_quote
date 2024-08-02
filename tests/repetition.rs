@@ -1,16 +1,11 @@
-extern crate proc_macro2;
-extern crate proc_quote;
-extern crate template_quote;
-
-use proc_macro2::{Ident, Span, TokenStream};
-use proc_quote::TokenStreamExt;
+use proc_macro2::{Ident, Span, TokenStream, TokenTree};
 use template_quote::quote;
 
 struct X;
 
-impl proc_quote::ToTokens for X {
+impl template_quote::ToTokens for X {
 	fn to_tokens(&self, tokens: &mut TokenStream) {
-		tokens.append(Ident::new("X", Span::call_site()));
+		tokens.extend(Some(TokenTree::Ident(Ident::new("X", Span::call_site()))));
 	}
 }
 
@@ -139,9 +134,6 @@ fn test_repetition_without_consuming() {
 
 #[test]
 fn test_repetition_trait_name_collision() {
-	trait Repeat {}
-	impl Repeat for X {}
-
 	let a = 0..3; // Avoid infinite loop
 	let x = X;
 
@@ -158,11 +150,11 @@ fn test_repetition_trait_name_collision() {
 // 	unimplemented!("doesn't compile")
 //
 // 	// trait Repeat {
-// 	//     fn __proc_quote__as_repeat(self) -> !;
+// 	//     fn __template_quote__as_repeat(self) -> !;
 // 	// }
 // 	// impl Repeat for X {
-// 	//     fn __proc_quote__as_repeat(self) -> ! { panic!("Wrong trait called.")
-// 	// } }
+// 	//     fn __template_quote__as_repeat(self) -> ! { panic!("Wrong trait
+// called.") 	// } }
 //
 // 	// let a = 0..3; // Avoid infinite loop
 // 	// let x = X;
@@ -181,8 +173,8 @@ fn test_repetition_trait_name_collision() {
 //
 // 	// struct R;
 // 	// impl R {
-// 	//     fn __proc_quote__as_repeat(self) -> ! { panic!("Wrong trait called.")
-// 	// } }
+// 	//     fn __template_quote__as_repeat(self) -> ! { panic!("Wrong trait
+// called.") 	// } }
 // 	// impl quote::ToTokens for R {
 // 	//     fn to_tokens(&self, tokens: &mut TokenStream) {
 // 	//         tokens.append(Ident::new("X", Span::call_site()));

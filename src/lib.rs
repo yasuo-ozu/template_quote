@@ -1,6 +1,4 @@
 //! This create provide [`quote!`] macro.
-extern crate proc_quote;
-extern crate template_quote_impl;
 
 /// The entrypoint with fully backward-compatibility with traditional `quote!`
 /// macro.
@@ -415,5 +413,43 @@ pub use template_quote_impl::quote_configured;
 /// ```
 pub use template_quote_impl::quote_spanned;
 
-pub use proc_quote::Repeat;
-pub use proc_quote::ToTokens;
+pub use imp::Repeat;
+pub use quote::ToTokens;
+
+mod imp {
+	use quote::ToTokens;
+	use std::borrow::Borrow;
+	use std::slice;
+
+	pub unsafe trait Repeat<T: Iterator> {
+		#[allow(non_snake_case)]
+		#[doc(hidden)]
+		fn __template_quote__as_repeat(self) -> T;
+	}
+
+	unsafe impl<T, I: Iterator<Item = T>> Repeat<I> for I {
+		fn __template_quote__as_repeat(self) -> I {
+			self
+		}
+	}
+
+	unsafe impl<'a, T: 'a, S: Borrow<[T]>> Repeat<slice::Iter<'a, T>> for &'a S {
+		fn __template_quote__as_repeat(self) -> slice::Iter<'a, T> {
+			(*self).borrow().iter()
+		}
+	}
+
+	unsafe impl<'a, T: ToTokens + 'a> Repeat<ToTokensRepeat<'a, T>> for &'a T {
+		fn __template_quote__as_repeat(self) -> ToTokensRepeat<'a, T> {
+			ToTokensRepeat(self)
+		}
+	}
+
+	pub struct ToTokensRepeat<'a, T: ToTokens + 'a>(&'a T);
+	impl<'a, T: ToTokens + 'a> Iterator for ToTokensRepeat<'a, T> {
+		type Item = &'a T;
+		fn next(&mut self) -> Option<Self::Item> {
+			Some(self.0)
+		}
+	}
+}

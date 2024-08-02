@@ -80,6 +80,7 @@ fn test_conditional_let() {
 		"1i32 is \"1\" , 2i32 is \"2\" , 3i32 is \"3\" true",
 		tokens.to_string()
 	);
+	#[allow(unused)]
 	struct STuple(i32, i32);
 	struct SStruct {
 		a: i32,
