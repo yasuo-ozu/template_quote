@@ -47,17 +47,17 @@ fn test_repetition_nested() {
 	assert_eq!(expected, tokens.to_string());
 }
 
-// #[test]
-// fn test_var_name_conflict() {
-// 	// The implementation of `#(...),*` uses the variable `__i` but it should be
-// 	// fine, if a little confusing when debugging.
-// 	let __i = vec!['a', 'b'];
-// 	let tokens = quote! {
-// 		#(#__i),*
-// 	};
-// 	let expected = "'a' , 'b'";
-// 	assert_eq!(expected, tokens.to_string());
-// }
+#[test]
+fn test_var_name_conflict() {
+	// The implementation of `#(...),*` uses the variable `__i` but it should be
+	// fine, if a little confusing when debugging.
+	let __i = vec!['a', 'b'];
+	let tokens = quote! {
+		#(#__i),*
+	};
+	let expected = "'a' , 'b'";
+	assert_eq!(expected, tokens.to_string());
+}
 
 #[test]
 fn test_repetition_same_iter_twice() {
@@ -144,49 +144,42 @@ fn test_repetition_trait_name_collision() {
 	assert_eq!("0i32 X 1i32 X 2i32 X", q.to_string());
 }
 
-// #[test]
-// #[ignore] // TODO(#7) trait fn collision
-// fn test_repetition_trait_fn_collision() {
-// 	unimplemented!("doesn't compile")
-//
-// 	// trait Repeat {
-// 	//     fn __template_quote__as_repeat(self) -> !;
-// 	// }
-// 	// impl Repeat for X {
-// 	//     fn __template_quote__as_repeat(self) -> ! { panic!("Wrong trait
-// called.") 	// } }
-//
-// 	// let a = 0..3; // Avoid infinite loop
-// 	// let x = X;
-//
-// 	// let q = quote! {
-// 	//     #(#a #x)*
-// 	// };
-//
-// 	// assert_eq!("0i32 X 1i32 X 2i32 X", q.to_string());
-// }
+#[test]
+#[ignore] // TODO(#7) trait fn collision
+fn test_repetition_trait_fn_collision() {
 
-// #[test]
-// #[ignore] // TODO(#7) struct method name collision
-// fn test_repetition_impl_fn_collision() {
-// 	unimplemented!("doesn't compile")
-//
-// 	// struct R;
-// 	// impl R {
-// 	//     fn __template_quote__as_repeat(self) -> ! { panic!("Wrong trait
-// called.") 	// } }
-// 	// impl quote::ToTokens for R {
-// 	//     fn to_tokens(&self, tokens: &mut TokenStream) {
-// 	//         tokens.append(Ident::new("X", Span::call_site()));
-// 	//     }
-// 	// }
-//
-// 	// let a = 0..3; // Avoid infinite loop
-// 	// let r = R;
-//
-// 	// let q = quote! {
-// 	//     #(#a #r)*
-// 	// };
-//
-// 	// assert_eq!("0i32 X 1i32 X 2i32 X", q.to_string());
-// }
+	// trait Repeat {
+	//     fn __template_quote__as_repeat(self) -> !;
+	// }
+	// impl Repeat for X {
+	//     fn __template_quote__as_repeat(self) -> ! { panic!("Wrong trait
+	// called.") 	// } }
+
+	// let a = 0..3; // Avoid infinite loop
+	// let x = X;
+
+	// let q = quote! {
+	//     #(#a #x)*
+	// };
+
+	// assert_eq!("0i32 X 1i32 X 2i32 X", q.to_string());
+}
+
+#[test]
+fn test_repetition_impl_fn_collision() {
+	struct R;
+	impl quote::ToTokens for R {
+		fn to_tokens(&self, tokens: &mut TokenStream) {
+			tokens.extend(quote!(X));
+		}
+	}
+
+	let a = 0..3; // Avoid infinite loop
+	let r = R;
+
+	let q = quote! {
+		#(#a #r)*
+	};
+
+	assert_eq!("0i32 X 1i32 X 2i32 X", q.to_string());
+}

@@ -69,9 +69,9 @@ impl core::default::Default for ParseEnvironment {
 			path_proc_macro2: parse_quote! { ::proc_macro2 },
 			path_quote: parse_quote! { ::template_quote },
 			path_core: parse_quote! { ::core },
-			id_stream: parse_quote! { __stream },
-			id_repeat: parse_quote! { __Repeat },
-			id_counter: parse_quote! { __i },
+			id_stream: parse_quote! { __template_quote_stream },
+			id_repeat: parse_quote! { __TemplateQuote_Repeat },
+			id_counter: parse_quote! { __template_quote_idcnt },
 		}
 	}
 }
