@@ -484,7 +484,7 @@ impl ParseEnvironment {
 		} = self;
 		let debug_str = input
 			.iter()
-			.take(5)
+			.take(6)
 			.map(|item| match item {
 				TokenTree::Group(g) => match g.delimiter() {
 					Delimiter::Parenthesis => "( .. )".to_owned(),
@@ -493,6 +493,11 @@ impl ParseEnvironment {
 					Delimiter::None => "..".to_owned(),
 				},
 				_ => format!("{}", item),
+			})
+			.chain(if input.len() > 6 {
+				Some("..".to_owned())
+			} else {
+				None
 			})
 			.collect::<Vec<_>>()
 			.join(" ");
