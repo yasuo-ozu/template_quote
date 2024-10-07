@@ -421,6 +421,7 @@ mod imp {
 	use std::borrow::Borrow;
 	use std::slice;
 
+	// This trait is from `proc-quote` crate.
 	pub unsafe trait Repeat<T: Iterator> {
 		#[allow(non_snake_case)]
 		#[doc(hidden)]
