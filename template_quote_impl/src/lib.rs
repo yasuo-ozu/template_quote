@@ -482,6 +482,20 @@ impl ParseEnvironment {
 			id_repeat,
 			..
 		} = self;
+		let debug_str = input
+			.iter()
+			.take(5)
+			.map(|item| match item {
+				TokenTree::Group(g) => match g.delimiter() {
+					Delimiter::Parenthesis => "( .. )".to_owned(),
+					Delimiter::Brace => "{ .. }".to_owned(),
+					Delimiter::Bracket => "[ .. ]".to_owned(),
+					Delimiter::None => "..".to_owned(),
+				},
+				_ => format!("{}", item),
+			})
+			.collect::<Vec<_>>()
+			.join(" ");
 		let mut inner_vals = HashSet::new();
 		let inner_output = self.parse_inner(input, &mut inner_vals, inline_expr_dict);
 		let code_sep = sep.map(|sep| self.emit_punct(&Punct::new(sep.as_char(), Spacing::Alone)));
@@ -499,16 +513,23 @@ impl ParseEnvironment {
 			}
 		});
 		let zip_iterators = iter
+			.clone()
 			.map(|ident| {
 				qquote! {
 					.zip(#ident .__template_quote__as_repeat())
 				}
 			})
 			.collect::<Vec<_>>();
+		let zip_iterator_checkers = inner_vals.iter().fold(qquote! {false}, |acc, ident| {
+			qquote! {#acc || (&#ident).__template_quote_is_iterable()}
+		});
 		qquote! {
 			{
 				#(let mut #val_nam = false;)*
 				use #path_quote::Repeat as #id_repeat;
+				if !(#zip_iterator_checkers) {
+					::core::panic!("Cannot iterate the group: #( {} )*", #debug_str);
+				}
 				for #idents_in_tuple in #first .__template_quote__as_repeat() #(#zip_iterators)* {
 					#(
 						if #val_nam { #code_sep }

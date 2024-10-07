@@ -425,11 +425,19 @@ mod imp {
 		#[allow(non_snake_case)]
 		#[doc(hidden)]
 		fn __template_quote__as_repeat(self) -> T;
+
+		#[allow(non_snake_case)]
+		#[doc(hidden)]
+		fn __template_quote_is_iterable(&self) -> bool;
 	}
 
 	unsafe impl<T, I: Iterator<Item = T>> Repeat<I> for I {
 		fn __template_quote__as_repeat(self) -> I {
 			self
+		}
+
+		fn __template_quote_is_iterable(&self) -> bool {
+			true
 		}
 	}
 
@@ -437,11 +445,19 @@ mod imp {
 		fn __template_quote__as_repeat(self) -> slice::Iter<'a, T> {
 			(*self).borrow().iter()
 		}
+
+		fn __template_quote_is_iterable(&self) -> bool {
+			true
+		}
 	}
 
 	unsafe impl<'a, T: ToTokens + 'a> Repeat<ToTokensRepeat<'a, T>> for &'a T {
 		fn __template_quote__as_repeat(self) -> ToTokensRepeat<'a, T> {
 			ToTokensRepeat(self)
+		}
+
+		fn __template_quote_is_iterable(&self) -> bool {
+			false
 		}
 	}
 
