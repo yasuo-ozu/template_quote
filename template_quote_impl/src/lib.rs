@@ -5,7 +5,7 @@ extern crate syn;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use proc_macro2::{Delimiter, Literal, Punct, Spacing, Span, TokenTree};
-use proc_macro_error::ResultExt;
+use proc_macro_error::abort_call_site;
 use quote::{quote as qquote, quote_spanned as qquote_spanned, TokenStreamExt};
 use std::collections::{HashSet, VecDeque};
 use syn::{parse_quote, Expr, Ident, Path, Token};
@@ -62,7 +62,7 @@ impl syn::parse::Parse for ParseEnvironment {
 	}
 }
 
-impl core::default::Default for ParseEnvironment {
+impl Default for ParseEnvironment {
 	fn default() -> Self {
 		Self {
 			span: parse_quote! { ::proc_macro2::Span::call_site() },
@@ -129,7 +129,7 @@ fn collect_ident(input: &mut VecDeque<TokenTree>) -> Result<Vec<Ident>, ()> {
 	match input.pop_front() {
 		// Parse `let (..) = ..`
 		Some(TokenTree::Group(g))
-			if (g.delimiter() == Delimiter::Parenthesis || g.delimiter() == Delimiter::Bracket) =>
+			if g.delimiter() == Delimiter::Parenthesis || g.delimiter() == Delimiter::Bracket =>
 		{
 			collect_paren_stream(g.stream().into_iter().collect(), &mut ret)?;
 			Ok(ret)
@@ -719,7 +719,7 @@ pub fn quote_configured(input: TokenStream) -> TokenStream {
 	input.extend(input0.into_iter());
 	let env: ParseEnvironment = match input.pop_front() {
 		Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => {
-			syn::parse2(g.stream()).expect_or_abort("Bad config format")
+			syn::parse2(g.stream()).unwrap_or_else(|e| abort_call_site!("Bad config format: {}", e))
 		}
 		_ => panic!("Bad config format"),
 	};
@@ -766,7 +766,7 @@ pub fn quote_spanned(input: TokenStream) -> TokenStream {
 		}
 	}
 	let mut env: ParseEnvironment = Default::default();
-	env.span = syn::parse2(span).expect_or_abort("Span must be expr");
+	env.span = syn::parse2(span).unwrap_or_else(|e| abort_call_site!("Span must be expr: {}", e));
 	let mut stream = TokenStream2::new();
 	stream.extend(input);
 	env.parse(stream).into()
