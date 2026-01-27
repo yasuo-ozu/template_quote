@@ -13,7 +13,7 @@ repository = "https://github.com/yasuo-ozu/template_quote"
 proc-macro = true
 
 [dependencies]
-syn = { version = "1.0.103", features = [ "full", "derive", "printing" ]}
+syn = { version = "2.0.114", features = ["full", "derive", "printing"]}
 proc-macro2 = "1.0.47"
 quote = "1.0.21"
 proc-macro-error = "1.0.4"
