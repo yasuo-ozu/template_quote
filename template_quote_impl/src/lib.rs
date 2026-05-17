@@ -241,6 +241,39 @@ fn collect_punct_in_expr(mut stream: VecDeque<TokenTree>) -> (Vec<Ident>, VecDeq
 	(ids, output)
 }
 
+fn hash_will_be_processed(next: Option<&TokenTree>, rest: &VecDeque<TokenTree>) -> bool {
+	match next {
+		Some(TokenTree::Ident(_)) => true,
+		Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Brace => true,
+		Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis => {
+			match (rest.front(), rest.get(1)) {
+				(Some(TokenTree::Group(group2)), _)
+					if group2.delimiter() == Delimiter::Brace =>
+				{
+					true
+				}
+				(Some(TokenTree::Punct(punct)), _) if punct.as_char() == '*' => true,
+				(Some(TokenTree::Punct(_)), Some(TokenTree::Punct(punct2)))
+					if punct2.as_char() == '*' =>
+				{
+					true
+				}
+				(Some(TokenTree::Punct(_)), Some(TokenTree::Group(group2)))
+					if group2.delimiter() == Delimiter::Brace =>
+				{
+					true
+				}
+				_ => false,
+			}
+		}
+		_ => false,
+	}
+}
+
+fn keep_joint_before_processed_hash(punct: char) -> bool {
+	matches!(punct, '+' | '-' | ':' | '<' | '>')
+}
+
 impl ParseEnvironment {
 	fn emit_ident(&self, ident: &Ident) -> TokenStream2 {
 		let Self {
@@ -302,6 +335,12 @@ impl ParseEnvironment {
 				p
 			}, &mut #id_stream);
 		}
+	}
+
+	fn emit_punct_with_spacing(&self, punct: &Punct, spacing: Spacing) -> TokenStream2 {
+		let mut p = Punct::new(punct.as_char(), spacing);
+		p.set_span(punct.span());
+		self.emit_punct(&p)
 	}
 
 	fn emit_group(&self, delim: &Delimiter, inner: TokenStream2) -> TokenStream2 {
@@ -692,10 +731,18 @@ impl ParseEnvironment {
 						}
 					}
 					(_, o) => {
+						let adjust_joint_before_hash = punct.spacing() == Spacing::Joint
+							&& matches!(o, Some(TokenTree::Punct(ref p)) if p.as_char() == '#')
+							&& !keep_joint_before_processed_hash(punct.as_char())
+							&& hash_will_be_processed(input.front(), &input);
 						if let Some(o) = o {
 							input.push_front(o);
 						}
-						output.append_all(self.emit_punct(&punct));
+						if adjust_joint_before_hash {
+							output.append_all(self.emit_punct_with_spacing(&punct, Spacing::Alone));
+						} else {
+							output.append_all(self.emit_punct(&punct));
+						}
 					}
 				},
 				TokenTree::Ident(o) => output.append_all(self.emit_ident(&o)),

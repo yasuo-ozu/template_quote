@@ -66,3 +66,34 @@ fn test_raw_ident() {
 	let expected = "r#struct r#the";
 	assert_eq!(expected, tokens.to_string());
 }
+
+#[test]
+fn test_joint_punct_before_interpolation() {
+	let v = 3;
+	let tokens = quote!(a+=#v);
+	let expected = "a += 3i32";
+	assert_eq!(expected, tokens.to_string());
+}
+
+#[test]
+fn test_hash_not_processed_is_unchanged() {
+	let tokens = quote!(#[inline] a = 1;);
+	let expected = "# [inline] a = 1 ;";
+	assert_eq!(expected, tokens.to_string());
+}
+
+#[test]
+fn test_joint_punct_before_interpolation_edge_cases() {
+	let v = 3;
+	assert_eq!("a -= 3i32", quote!(a-=#v).to_string());
+	assert_eq!("a *= 3i32", quote!(a*=#v).to_string());
+	assert_eq!("a /= 3i32", quote!(a/=#v).to_string());
+	assert_eq!("a %= 3i32", quote!(a%=#v).to_string());
+	assert_eq!("a &= 3i32", quote!(a&=#v).to_string());
+	assert_eq!("a |= 3i32", quote!(a|=#v).to_string());
+	assert_eq!("a ^= 3i32", quote!(a^=#v).to_string());
+	assert_eq!("a == 3i32", quote!(a==#v).to_string());
+	assert_eq!("a != 3i32", quote!(a!=#v).to_string());
+	assert_eq!("a <= 3i32", quote!(a<=#v).to_string());
+	assert_eq!("a >= 3i32", quote!(a>=#v).to_string());
+}

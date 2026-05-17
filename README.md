@@ -433,8 +433,3 @@ use your_crate_name::my_macro;
 
 my_macro!()
 ```
-
-
-# Limitation
-
-- If the punct token before '#' in the macro body has `Spacing::Join`, then the emitting punct also has same spacing, whether the '#' token is processed by the macro or not.
