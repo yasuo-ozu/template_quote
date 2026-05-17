@@ -66,8 +66,10 @@ fn test_char() {
 	let tokens = quote! {
 		#zero #pound #quote #apost #newline
 	};
-	let expected = r#"'\0' '#' '"' '\'' '\n'"#;
-	assert_eq!(expected, tokens.to_string());
+	let got = tokens.to_string();
+	let expected_short = r#"'\0' '#' '"' '\'' '\n'"#;
+	let expected_unicode = r#"'\u{0}' '#' '"' '\'' '\n'"#;
+	assert!(got == expected_short || got == expected_unicode);
 }
 
 #[test]

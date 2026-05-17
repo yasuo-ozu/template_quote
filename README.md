@@ -400,7 +400,7 @@ pub fn my_macro(_: TokenStream) -> TokenStream {
 
 Then you can use it like this:
 
-```rust
+```ignore
 extern crate your_crate_name;
 use your_crate_name::my_macro;
 

@@ -1,7 +1,8 @@
 [package]
 name = "template-quote-impl"
-version = "0.4.3"
+version = "0.4.4"
 edition = "2021"
+rust-version = "1.56"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
 description = "A new-fasioned quote! macro implementation with pretty template-engine like syntax"
 license = "MIT"
@@ -17,6 +18,6 @@ proc-macro = true
 
 [dependencies]
 syn = { version = "1.0.103", features = ["full", "derive", "printing"] }
-proc-macro2 = "1.0.47"
-quote = "1.0.21"
+proc-macro2 = "1.0.79"
+quote = "1.0.35"
 proc-macro-error = "1.0.4"
