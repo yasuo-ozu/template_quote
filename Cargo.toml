@@ -1,25 +1,25 @@
 [package]
 name = "template-quote"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
 description = "A new-fasioned quote! macro implementation with pretty template-engine like syntax"
 license = "MIT"
-keywords = ["syn", "quote", "proc-macro", "macros"]
-categories = ["development-tools::procedural-macro-helpers"]
+readme = "README.md"
+homepage = "https://github.com/yasuo-ozu/template_quote"
+documentation = "https://docs.rs/template-quote"
+keywords = ["quote", "proc-macro", "macros", "template", "codegen"]
+categories = ["development-tools::procedural-macro-helpers", "template-engine"]
 repository = "https://github.com/yasuo-ozu/template_quote"
 
 
 [dependencies]
-template-quote-impl = { path = "./template_quote_impl", version = "0.4.2" }
+template-quote-impl = { path = "./template_quote_impl", version = "0.4.3" }
 quote = "1.0"
 
 [dev-dependencies]
 proc-macro2 = "1.0.47"
 
 [workspace]
-members = [
-	".",
-	"template_quote_impl"
-]
+members = [".", "template_quote_impl"]
 resolver = "2"

@@ -1,19 +1,22 @@
 [package]
 name = "template-quote-impl"
-version = "0.4.2"
+version = "0.4.3"
 edition = "2021"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
 description = "A new-fasioned quote! macro implementation with pretty template-engine like syntax"
 license = "MIT"
-keywords = ["syn", "quote", "proc-macro", "macros"]
-categories = ["development-tools::procedural-macro-helpers"]
+readme = "../README.md"
+homepage = "https://github.com/yasuo-ozu/template_quote"
+documentation = "https://docs.rs/template-quote-impl"
+keywords = ["quote", "proc-macro", "macros", "template", "codegen"]
+categories = ["development-tools::procedural-macro-helpers", "template-engine"]
 repository = "https://github.com/yasuo-ozu/template_quote"
 
 [lib]
 proc-macro = true
 
 [dependencies]
-syn = { version = "1.0.103", features = [ "full", "derive", "printing" ]}
+syn = { version = "1.0.103", features = ["full", "derive", "printing"] }
 proc-macro2 = "1.0.47"
 quote = "1.0.21"
 proc-macro-error = "1.0.4"

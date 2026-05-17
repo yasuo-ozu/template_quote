@@ -1,34 +1,23 @@
+This crate provides a Rust quasi-quoting macro for proc-macro development. It generates `TokenStream`s by expanding variable interpolation and template syntax.
 
+The macro is built on top of the `proc_macro` crate.
 
-This crate provides Rust's quasi-quoting macro, intended to use in your proc-macro, to generate `TokenStream`
-expanding variable interporation and expanding templates.
+# Interpolation
 
-This macro is constructed based on `proc_macro` crate.
+The original `quote!` macro syntax is fully supported. See [quote docs](https://docs.rs/quote/1.0.23/quote/).
 
-# Interporation
-
-Original `quote!` macro syntax is fully supported. See [quote's doc](https://docs.rs/quote/1.0.23/quote/).
-
-For backward compatibility, interporation rule is same as traditional
-`quote!` macro. The interporation is done with `#var` (similar to the
-variable `$var` in `macro_rules!`). Most variables in `Syn` crate are
-interporated using [`::proc_quote::ToTokens`] trait.
+For backward compatibility, interpolation rules are the same as in the traditional `quote!` macro. Interpolation uses `#var` (similar to `$var` in `macro_rules!`). Most values from `syn` are interpolated via the [`::proc_quote::ToTokens`] trait.
 
 ## Rules
 
-Repetition is done using syntax like `#(...)*` or `#(...),*`. It repeats the
-variables (`#var`) inside this syntax, which implements
-[`::proc_quote::Repeat`].
+Repetition uses syntax like `#(...)*` or `#(...),*`. It repeats variables (`#var`) inside the pattern that implement [`::proc_quote::Repeat`].
 
-- `#(...)*` - repeat ... with no separators. at least one variable should be
-  included in ...
-- `#(...),*` - same as before, but interporates with separator ','.
+- `#(...)*` repeats `...` with no separator. At least one variable must appear in `...`.
+- `#(...),*` does the same, but inserts `,` as a separator.
 
 ## Problem
 
-The interporation rule is **rough**, so I implemented new 'template' syntax.
-For example, the following code will not allowed, because `#var1` cannot be
-iterated double.
+Classic interpolation is limited, so this crate introduces new template syntax. For example, the following code is not allowed because `#var1` cannot be nested in this way:
 
 ```
 # use template_quote::quote;
@@ -42,13 +31,11 @@ assert_eq!("'a' 1i32 'a' 2i32 'b' 3i32 'b' 4i32", tokens.to_string());
 
 # Template syntax
 
-Template syntax is proceedual-like syntax, which allows you to use structual
-statementsinside the macro.
+Template syntax is procedural-like and lets you use structured statements inside the macro.
 
 ## If syntax
 
-This code iterates around `#i` (with interporation), and emits `i32` into
-`TokenStream` while the number meets the condition.
+This code iterates over `#i` (via interpolation) and emits `i32` into the `TokenStream` when the value meets the condition.
 
 ```
 # use template_quote::quote;
@@ -63,7 +50,7 @@ let tokens = quote!{
 assert_eq!("3i32", tokens.to_string());
 ```
 
-The if-else and if-else-if is also allowed.
+`if-else` and `if-else-if` are also supported.
 
 ```
 # use template_quote::quote;
@@ -102,8 +89,7 @@ assert_eq!("1i32 + 2i32 - 3i32 + 4i32 5i32", tokens.to_string());
 
 ## For syntax
 
-For syntax iterates around the variable (like interporation), but it
-specifies which variable to iterate.
+`for` syntax iterates over variables (similar to interpolation), but lets you explicitly choose which variable to iterate.
 
 ```
 # use template_quote::quote;
@@ -119,7 +105,7 @@ let tokens = quote!{
 assert_eq!("1i32 -> 'a' 1i32 -> 'b' 2i32 -> 'a' 2i32 -> 'b'", tokens.to_string());
 ```
 
-Internal loop can be replaced with interporation:
+The inner loop can be replaced with interpolation:
 
 ```
 # use template_quote::quote;
@@ -135,7 +121,7 @@ let tokens = quote!{
 assert_eq!("1i32 -> 'a' 1i32 -> 'b' 2i32 -> 'a' 2i32 -> 'b'", tokens.to_string());
 ```
 
-You can also specify separator with for statement.
+You can also specify a separator with a `for` statement.
 
 ```
 # use template_quote::quote;
@@ -146,8 +132,7 @@ let tokens = quote!{
 assert_eq!("1i32 | 2i32", tokens.to_string());
 ```
 
-Interporation is not usable with variables binded in for syntax. For
-example,
+Interpolation cannot use variables bound by `for` syntax directly. For example:
 
 ```compile_fail
 # use template_quote::quote;
@@ -160,8 +145,7 @@ let tokens = quote!{
 assert_eq!("1i32 2i32 , 3i32", tokens.to_string());
 ```
 
-will fail into error because no variables is available in the interporation
-syntax.
+This fails because no interpolation variable is available:
 
 ```text
 error: proc macro panicked
@@ -178,8 +162,7 @@ error: proc macro panicked
    = help: message: Iterative vals not found
 ```
 
-In this case, you can use `#(for i in #v)` syntax to specify which variable
-to iterate with interporation:
+In this case, use `#(for i in #v)` to specify which variable to iterate via interpolation:
 
 ```
 # use template_quote::quote;
@@ -203,7 +186,7 @@ let tokens = quote!{
 assert_eq!("hello hello", tokens.to_string());
 ```
 
-## While-Let syntax
+## While-let syntax
 
 ```
 # use template_quote::quote;
@@ -214,8 +197,7 @@ let tokens = quote!{
 assert_eq!("1i32 2i32", tokens.to_string());
 ```
 
-Same as 'for' syntax, the binded valiables in 'while' is not iteratable with
-interporation syntax. For example,
+As with `for` syntax, variables bound in `while` are not iterable through interpolation. For example:
 
 ```compile_fail
 # use template_quote::quote;
@@ -227,11 +209,11 @@ quote!{
 };
 ```
 
-will fail.
+This fails.
 
 ## Let syntax
 
-Let syntax bind new variables usable inside the block.
+`let` syntax binds new variables that can be used inside the block.
 
 ```
 # use template_quote::quote;
@@ -246,11 +228,11 @@ let tokens = quote!{
 assert_eq!("1i32 -> 'a' , 2i32 -> 'b'", tokens.to_string());
 ```
 
-Here, `#n` and `#c` is not iteratable with interporation syntax.
+Here, `#n` and `#c` are not iterable via interpolation.
 
 ## Inline expression
 
-You can place inline expression in `quote!` macro.
+You can place inline expressions in `quote!`.
 
 ```
 # use template_quote::quote;
@@ -263,8 +245,7 @@ let tokens = quote!{
 assert_eq!("1i32 -> \"1\" 2i32 -> \"2\"", tokens.to_string());
 ```
 
-The following example will fail to compile because it does not understand
-which variable to be interpolated:
+The following example fails because the macro cannot determine which variable should be iterated:
 
 ```compile_fail
 # use template_quote::quote;
@@ -277,8 +258,7 @@ let tokens = quote!{
 assert_eq!("\"1\" \"2\"", tokens.to_string());
 ```
 
-In this case, you can use `#i` syntax in inline expression to specify which
-variable to iterate with interporation syntax.
+In this case, use `#i` inside the inline expression to specify the interpolation variable:
 
 ```
 # use template_quote::quote;
@@ -293,7 +273,7 @@ assert_eq!("\"1\" \"2\"", tokens.to_string());
 
 ## Inline statement
 
-You can place arbitrary statement inside this macro. For example,
+You can place arbitrary statements inside the macro. For example:
 
 ```
 # use template_quote::quote;
@@ -307,7 +287,7 @@ let tokens = quote!{
 assert_eq!("1i32 2i32 3i32", tokens.to_string());
 ```
 
-will print:
+This prints:
 
 ```text
 debug: 1
@@ -315,8 +295,7 @@ debug: 2
 debug: 3
 ```
 
-To be distinguishable, all statements have to end with ';'. For example,
-'if' statement in inline statement syntax should placed with extra ';'.
+To avoid ambiguity, all inline statements must end with `;`. For example, an `if` statement in inline-statement syntax needs an extra `;`:
 
 ```
 # use template_quote::quote;
@@ -331,20 +310,17 @@ quote!{
 
 ## Break, Continue
 
-You can put control statement like `break` or `continue` in inline
-statement, but it is a bit danger.
+You can use control-flow statements like `break` and `continue` in inline statements, but this can be risky.
 
-If you use `break;` inside block (like `{ ... }` or `( ... )`), `break` will
-suddenly give up emitting whole group, and nothing will be emitted. For
-example, the following code does not emit any group:
+If you use `break;` inside a group (like `{ ... }` or `( ... )`), it aborts emission of the whole group, and nothing is emitted for that group. For example, the following code emits only one token:
 
 ```
 # use template_quote::quote;
 let v = vec![1, 2, 3];
 let tokens = quote!{
 	#(for i in v) {
-		#i // this is emitted once
-		// The block is not emitted
+		#i // emitted once
+		// This block is not emitted
 		{
 			#i
 			#{ break; }
@@ -354,7 +330,7 @@ let tokens = quote!{
 assert_eq!("1i32", tokens.to_string());
 ```
 
-`break` also affects on interporation syntax like:
+`break` also affects interpolation syntax:
 
 ```
 # use template_quote::quote;
@@ -368,9 +344,7 @@ let tokens = quote!{
 assert_eq!("1i32", tokens.to_string());
 ```
 
-Unfortunately, `break` will leak outside of `quote!` macro. This is example
-which the internal `break` affects on 'for' loop, which is placed outer of
-the `quote!` macro.
+`break` can even escape outside the `quote!` macro. In this example, the internal `break` affects the outer `for` loop:
 
 ```
 # use template_quote::quote;
@@ -385,14 +359,13 @@ assert_eq!(v.len(), 0);
 ```
 
 This crate provides quasi-quoting macros like [quote](https://github.com/dtolnay/quote).
-This crate has backward-compatibility with original `quote!` macro and also provides
-new template-engine like syntax.
+It is backward-compatible with the original `quote!` macro and also provides new template-engine-like syntax.
 
-This crate is get some inspiration from [proc-quote](https://crates.io/crates/proc-quote).
+This crate is inspired in part by [proc-quote](https://crates.io/crates/proc-quote).
 
 # Using this crate
 
-This crate is useful for developing proc-macro. Usually an proc-macro crate using template_quote is placed with following `Cargo.toml`:
+This crate is useful for proc-macro development. A typical proc-macro crate using `template_quote` has the following `Cargo.toml`:
 
 ```Cargo.toml
 [package]
@@ -408,7 +381,7 @@ template-quote = "0.2"
 proc-macro2 = "1.0"
 ```
 
-and with following `src/lib.rs` code:
+And the following `src/lib.rs`:
 
 ```lib.rs
 extern crate proc_macro;
@@ -425,7 +398,7 @@ pub fn my_macro(_: TokenStream) -> TokenStream {
 }
 ```
 
-then you will be able to use it like:
+Then you can use it like this:
 
 ```rust
 extern crate your_crate_name;
