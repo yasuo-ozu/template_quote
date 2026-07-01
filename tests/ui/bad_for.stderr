@@ -1,0 +1,5 @@
+error: malformed `for` loop in template (expected `for <pat> in <expr>`)
+ --> tests/ui/bad_for.rs:5:24
+  |
+5 |     let _ = quote! { #(for bad) { x } };
+  |                        ^^^^^^^

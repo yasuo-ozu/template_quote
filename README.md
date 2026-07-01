@@ -1,16 +1,77 @@
-This crate provides a Rust quasi-quoting macro for proc-macro development. It generates `TokenStream`s by expanding variable interpolation and template syntax.
+<div align="center">
+  <img src="https://raw.githubusercontent.com/yasuo-ozu/template_quote/main/logo.png" alt="template-quote logo" width="200">
+  <p><em><code>quote!</code> with control flow.</em></p>
+</div>
 
-The macro is built on top of the `proc_macro` crate.
+# template-quote
+
+[![crates.io](https://img.shields.io/crates/v/template-quote.svg)](https://crates.io/crates/template-quote)
+[![docs.rs](https://docs.rs/template-quote/badge.svg)](https://docs.rs/template-quote)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
+[![CI](https://github.com/yasuo-ozu/template_quote/actions/workflows/ci.yml/badge.svg)](https://github.com/yasuo-ozu/template_quote/actions/workflows/ci.yml)
+
+A drop-in [`quote!`](https://docs.rs/quote/) replacement that adds
+**template-engine-like control flow** — write `if`, `for`, `while` and `let`
+directly inside the macro instead of assembling `TokenStream`s by hand.
+
+```rust
+use template_quote::quote;
+use proc_macro2::{Ident, Span};
+
+let fields: Vec<Ident> = ["x", "y", "z"]
+    .iter()
+    .map(|n| Ident::new(n, Span::call_site()))
+    .collect();
+let derive_debug = true;
+
+let tokens = quote! {
+    #(if derive_debug) { #[derive(Debug)] }
+    struct Point {
+        #(for f in &fields) { #f: i32, }
+    }
+};
+// #[derive(Debug)] struct Point { x: i32, y: i32, z: i32, }
+# assert!(tokens.to_string().contains("struct Point"));
+```
+
+## Why template-quote?
+
+- **Backward-compatible with `quote!`** — every existing `quote!` template works
+  unchanged, so adopting it is zero-cost.
+- **Inline control flow** — `#(if …)`, `#(else)`, `#(for x in …)`, `#(while …)`
+  and `#(let … = …)` branch and loop *inside* the quotation.
+- **Nested repetition** that classic `quote!` rejects, e.g. `#(#(#a #b)*)*`.
+- **Inline expressions & statements** — `#{ expr }` splices a computed value;
+  `#{ stmt; }` runs code mid-expansion.
+- **`quote_spanned!` / `quote_configured!`** for span control and custom crate
+  paths.
+
+## Install
+
+```sh
+cargo add template-quote proc-macro2
+```
+
+The generated code refers to [`proc_macro2`](https://docs.rs/proc-macro2/), so
+add it alongside `template-quote`. MSRV is **Rust 1.56**.
+
+## How it compares
+
+- vs [`quote`](https://docs.rs/quote/): a superset — every `quote!` template
+  works unchanged, plus inline `if` / `for` / `while` / `let` and nested
+  repetition.
+- vs [`proc-quote`](https://crates.io/crates/proc-quote): the inspiration for
+  this crate; `template-quote` keeps full `quote!` syntax compatibility.
 
 # Interpolation
 
-The original `quote!` macro syntax is fully supported. See [quote docs](https://docs.rs/quote/1.0.23/quote/).
+The original `quote!` macro syntax is fully supported. See [quote docs](https://docs.rs/quote/).
 
-For backward compatibility, interpolation rules are the same as in the traditional `quote!` macro. Interpolation uses `#var` (similar to `$var` in `macro_rules!`). Most values from `syn` are interpolated via the [`::proc_quote::ToTokens`] trait.
+For backward compatibility, interpolation rules are the same as in the traditional `quote!` macro. Interpolation uses `#var` (similar to `$var` in `macro_rules!`). Most values from `syn` are interpolated via the [`ToTokens`] trait.
 
 ## Rules
 
-Repetition uses syntax like `#(...)*` or `#(...),*`. It repeats variables (`#var`) inside the pattern that implement [`::proc_quote::Repeat`].
+Repetition uses syntax like `#(...)*` or `#(...),*`, repeating over the variables (`#var`) inside the pattern. A repeated `#var` may be any [`Iterator`], a slice / array / `Vec` (iterated by reference, not consumed), or a single [`ToTokens`] value (repeated unchanged on every iteration). At least one `#var` in the group must be a real iterator to bound the repetition.
 
 - `#(...)*` repeats `...` with no separator. At least one variable must appear in `...`.
 - `#(...),*` does the same, but inserts `,` as a separator.
@@ -148,18 +209,13 @@ assert_eq!("1i32 2i32 , 3i32", tokens.to_string());
 This fails because no interpolation variable is available:
 
 ```text
-error: proc macro panicked
-  --> ***
-   |
-6  |   let tokens = quote!{
-   |  ______________^
-7  | |     #(
-8  | |         #(for i in v) { #i }
-9  | |     )*
-10 | | };
-   | |_^
-   |
-   = help: message: Iterative vals not found
+error: Repetition group `#( # ( .. ) { .. } )*` contains no interpolation variable (`#var`)
+ --> src/lib.rs
+  |
+  |         #(for i in v) { #i }
+  |         ^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: a repetition needs at least one `#var` inside it to drive the iteration
 ```
 
 In this case, use `#(for i in #v)` to specify which variable to iterate via interpolation:
@@ -358,10 +414,16 @@ for _ in 0..3 {
 assert_eq!(v.len(), 0);
 ```
 
-This crate provides quasi-quoting macros like [quote](https://github.com/dtolnay/quote).
-It is backward-compatible with the original `quote!` macro and also provides new template-engine-like syntax.
+# Spanned and configured output
 
-This crate is inspired in part by [proc-quote](https://crates.io/crates/proc-quote).
+Besides [`quote!`], two sibling macros are provided:
+
+- [`quote_spanned!`] works like `quote!` but applies an explicit span to every
+  emitted token: `quote_spanned! { my_span => /* ... */ }`.
+- [`quote_configured!`] overrides the crate paths and default span that the
+  generated code refers to (useful when `proc_macro2` or this crate are
+  re-exported under non-standard paths). A leading `{ key: value, ... } =>`
+  block configures it; see its documentation for the accepted keys.
 
 # Using this crate
 
@@ -377,7 +439,7 @@ edition = "2021"
 proc-macro = true
 
 [dependencies]
-template-quote = "0.2"
+template-quote = "0.5"
 proc-macro2 = "1.0"
 ```
 

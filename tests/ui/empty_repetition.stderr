@@ -1,0 +1,10 @@
+error: Repetition group `#(  )*` contains no interpolation variable (`#var`)
+
+         = note: a repetition needs at least one `#var` inside it to drive the iteration
+
+ --> tests/ui/empty_repetition.rs:5:13
+  |
+5 |     let _ = quote! { #()* };
+  |             ^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `quote` (in Nightly builds, run with -Z macro-backtrace for more info)

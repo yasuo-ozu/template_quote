@@ -1,0 +1,7 @@
+error: `quote_spanned!` expects `<span-expr> => <tokens>` (no `=>` found)
+ --> tests/ui/spanned_missing_arrow.rs:5:13
+  |
+5 |     let _ = quote_spanned! { no arrow here };
+  |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `quote_spanned` (in Nightly builds, run with -Z macro-backtrace for more info)

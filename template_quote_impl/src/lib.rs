@@ -5,7 +5,7 @@ extern crate syn;
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
 use proc_macro2::{Delimiter, Group, Literal, Punct, Spacing, Span, TokenTree};
-use proc_macro_error::{abort, proc_macro_error, ResultExt};
+use proc_macro_error::{abort, proc_macro_error};
 use quote::{quote as qquote, quote_spanned as qquote_spanned, TokenStreamExt};
 use std::collections::{HashSet, VecDeque};
 use syn::{parse_quote, Expr, Ident, Path, Token};
@@ -21,7 +21,6 @@ struct ParseEnvironment {
 	path_quote: Path,
 	path_core: Path,
 	id_stream: Ident,
-	id_repeat: Ident,
 	id_counter: Ident,
 }
 
@@ -54,7 +53,7 @@ impl syn::parse::Parse for ParseEnvironment {
 					this.span = expr;
 				}
 				(key, _) => {
-					return Err(input.error(&format!("Bad config name: {}", key)));
+					return Err(input.error(format!("Bad config name: {}", key)));
 				}
 			}
 		}
@@ -69,9 +68,8 @@ impl core::default::Default for ParseEnvironment {
 			path_proc_macro2: parse_quote! { ::proc_macro2 },
 			path_quote: parse_quote! { ::template_quote },
 			path_core: parse_quote! { ::core },
-			id_stream: parse_quote! { __template_quote_stream },
-			id_repeat: parse_quote! { __TemplateQuote_Repeat },
-			id_counter: parse_quote! { __template_quote_idcnt },
+			id_stream: Ident::new("__template_quote_stream", Span::mixed_site()),
+			id_counter: Ident::new("__template_quote_idcnt", Span::mixed_site()),
 		}
 	}
 }
@@ -185,8 +183,8 @@ fn collect_ident(input: &mut VecDeque<TokenTree>) -> Result<Vec<Ident>, ()> {
 						{
 							inner.pop_front();
 						}
-						match inner.pop_front().unwrap() {
-							TokenTree::Ident(key) => {
+						match inner.pop_front() {
+							Some(TokenTree::Ident(key)) => {
 								// `key: <pattern>` (recurse into the sub-pattern, so
 								// non-ident values like `a: (x, y)` work) or the
 								// field-shorthand `key`.
@@ -304,8 +302,7 @@ impl ParseEnvironment {
 			..
 		} = self;
 		let s = ident.to_string();
-		if s.starts_with("r#") {
-			let s = &s[2..];
+		if let Some(s) = s.strip_prefix("r#") {
 			qquote! {
 				<_ as #path_quote::ToTokens>::to_tokens(&#path_proc_macro2::Ident::new_raw(#s, (#span)), &mut #id_stream);
 			}
@@ -407,11 +404,13 @@ impl ParseEnvironment {
 		fn parse_if_inner(
 			mut cond: VecDeque<TokenTree>,
 		) -> (Vec<Ident>, Vec<Ident>, Vec<TokenTree>) {
+			let span_ts: TokenStream2 = cond.iter().cloned().collect();
 			let mut bak: Vec<_> = cond.iter().cloned().collect();
 			match cond.pop_front() {
-				Some(TokenTree::Ident(id_let)) if &id_let.to_string() == "let" => {
-					let removing_ids =
-						collect_ident_eq(&mut cond).expect("Bad format in if-let conditional");
+				Some(TokenTree::Ident(id_let)) if id_let == "let" => {
+					let removing_ids = collect_ident_eq(&mut cond).unwrap_or_else(|_| {
+						abort!(span_ts, "malformed `if let` conditional in template")
+					});
 					bak.truncate(bak.len() - cond.len());
 					let (appending_ids, rem) = collect_punct_in_expr(cond);
 					bak.extend(rem);
@@ -424,13 +423,13 @@ impl ParseEnvironment {
 					bak.extend(rem);
 					(vec![], appending_ids, bak)
 				}
-				None => panic!("if syntax is empty"),
+				None => abort!(span_ts, "empty `if` conditional in template"),
 			}
 		}
 		let mut cond: VecDeque<TokenTree> = conditional.clone().into_iter().collect();
 		let cond_len = cond.len();
 		let (removing_ids, appending_ids, cond) = match (cond.pop_front(), sep.is_some()) {
-			(Some(TokenTree::Ident(id)), false) if &id.to_string() == "if" => {
+			(Some(TokenTree::Ident(id)), false) if id == "if" => {
 				let (removing_ids, appending_ids, rem) = parse_if_inner(cond);
 				(
 					removing_ids,
@@ -438,10 +437,10 @@ impl ParseEnvironment {
 					Some(TokenTree::Ident(id)).into_iter().chain(rem).collect(),
 				)
 			}
-			(Some(TokenTree::Ident(id)), false) if &id.to_string() == "else" => {
+			(Some(TokenTree::Ident(id)), false) if id == "else" => {
 				match cond.pop_front() {
 					// else if
-					Some(TokenTree::Ident(id_if)) if &id_if.to_string() == "if" => {
+					Some(TokenTree::Ident(id_if)) if id_if == "if" => {
 						let (removing_ids, appending_ids, rem) = parse_if_inner(cond);
 						(
 							removing_ids,
@@ -452,53 +451,68 @@ impl ParseEnvironment {
 								.collect(),
 						)
 					}
-					Some(_) => panic!("Bad format in else conditional"),
+					Some(_) => {
+						abort!(
+							conditional.clone(),
+							"malformed `else` in template (expected `else` or `else if`)"
+						)
+					}
 					None => (vec![], vec![], conditional),
 				}
 			}
-			(Some(TokenTree::Ident(id)), false) if id.to_string() == "let" => {
-				let removing_ids = collect_ident_eq(&mut cond).expect("Bad format in let binding");
+			(Some(TokenTree::Ident(id)), false) if id == "let" => {
+				let removing_ids = collect_ident_eq(&mut cond).unwrap_or_else(|_| {
+					abort!(conditional.clone(), "malformed `let` binding in template")
+				});
 				let n = cond_len - cond.len();
 				let (appending_ids, rem) = collect_punct_in_expr(cond);
 				let conditional: TokenStream2 =
 					conditional.clone().into_iter().take(n).chain(rem).collect();
 				(removing_ids, appending_ids, qquote! {#conditional ;})
 			}
-			(Some(TokenTree::Ident(id)), _) if id.to_string() == "while" => {
-				match cond.pop_front() {
-					Some(TokenTree::Ident(id_let)) if &id_let.to_string() == "let" => {
-						let removing_ids =
-							collect_ident_eq(&mut cond).expect("Bad format in while-let loop");
-						let n = cond_len - cond.len();
-						let (appending_ids, rem) = collect_punct_in_expr(cond);
-						let conditional: TokenStream2 =
-							conditional.clone().into_iter().take(n).chain(rem).collect();
-						(removing_ids, appending_ids, conditional)
-					}
-					Some(o) => {
-						cond.push_front(o);
-						let n = cond_len - cond.len();
-						let (appending_ids, rem) = collect_punct_in_expr(cond);
-						let conditional: TokenStream2 =
-							conditional.clone().into_iter().take(n).chain(rem).collect();
-						(vec![], appending_ids, conditional)
-					}
-					None => panic!("while syntax is empty"),
+			(Some(TokenTree::Ident(id)), _) if id == "while" => match cond.pop_front() {
+				Some(TokenTree::Ident(id_let)) if id_let == "let" => {
+					let removing_ids = collect_ident_eq(&mut cond).unwrap_or_else(|_| {
+						abort!(
+							conditional.clone(),
+							"malformed `while let` loop in template"
+						)
+					});
+					let n = cond_len - cond.len();
+					let (appending_ids, rem) = collect_punct_in_expr(cond);
+					let conditional: TokenStream2 =
+						conditional.clone().into_iter().take(n).chain(rem).collect();
+					(removing_ids, appending_ids, conditional)
 				}
-			}
-			(Some(TokenTree::Ident(id)), _) if id.to_string() == "for" => {
+				Some(o) => {
+					cond.push_front(o);
+					let n = cond_len - cond.len();
+					let (appending_ids, rem) = collect_punct_in_expr(cond);
+					let conditional: TokenStream2 =
+						conditional.clone().into_iter().take(n).chain(rem).collect();
+					(vec![], appending_ids, conditional)
+				}
+				None => abort!(conditional.clone(), "empty `while` conditional in template"),
+			},
+			(Some(TokenTree::Ident(id)), _) if id == "for" => {
 				match (collect_ident(&mut cond), cond.pop_front()) {
-					(Ok(v), Some(TokenTree::Ident(id_in))) if &id_in.to_string() == "in" => {
+					(Ok(v), Some(TokenTree::Ident(id_in))) if id_in == "in" => {
 						let n = cond_len - cond.len();
 						let (appending_ids, rem) = collect_punct_in_expr(cond);
 						let conditional: TokenStream2 =
 							conditional.clone().into_iter().take(n).chain(rem).collect();
 						(v, appending_ids, conditional)
 					}
-					_ => panic!("Bad format in for loop"),
+					_ => abort!(
+						conditional.clone(),
+						"malformed `for` loop in template (expected `for <pat> in <expr>`)"
+					),
 				}
 			}
-			_ => panic!("Bad format in conditional"),
+			_ => abort!(
+				conditional.clone(),
+				"malformed conditional in template (expected `if`, `else`, `let`, `while` or `for`)"
+			),
 		};
 		let inner = self.parse_inner(input, vals, inline_expr_dict);
 		for id in removing_ids {
@@ -538,7 +552,7 @@ impl ParseEnvironment {
 	) -> TokenStream2 {
 		let Self {
 			path_quote,
-			id_repeat,
+			path_core,
 			..
 		} = self;
 		let debug_str = input
@@ -572,38 +586,58 @@ impl ParseEnvironment {
 			.into_iter()
 			.collect::<Vec<_>>();
 		vals.extend(inner_vals.iter().cloned());
-		let mut iter = inner_vals.iter();
-		let first = iter.next().unwrap_or_else(|| {
+		let vars: Vec<Ident> = inner_vals.iter().cloned().collect();
+		if vars.is_empty() {
 			abort!(
 				group_tokens,
 				"Repetition group `#( {} )*` contains no interpolation variable (`#var`)", debug_str;
 				note = "a repetition needs at least one `#var` inside it to drive the iteration"
-			)
-		});
-		let idents_in_tuple = iter.clone().cloned().fold(qquote! {#first}, |prev, next| {
-			qquote! {
-				(#prev, #next)
-			}
-		});
-		let zip_iterators = iter
-			.clone()
-			.map(|ident| {
+			);
+		}
+		// Fresh call-site helper idents per distinct interpolation var: the bound
+		// iterator and its runtime "is iterable" flag.
+		let it_idents: Vec<Ident> = (0..vars.len())
+			.map(|i| Ident::new(&format!("__template_quote_it_{}", i), Span::mixed_site()))
+			.collect();
+		let m_idents: Vec<Ident> = (0..vars.len())
+			.map(|i| Ident::new(&format!("__template_quote_m_{}", i), Span::mixed_site()))
+			.collect();
+		let bindings = vars
+			.iter()
+			.zip(&it_idents)
+			.zip(&m_idents)
+			.map(|((var, it), m)| {
 				qquote! {
-					.zip(#ident .__template_quote__as_repeat())
+					#[allow(unused_mut)]
+					let (mut #it, #m) = (#var).__template_quote_into_iter();
 				}
-			})
-			.collect::<Vec<_>>();
-		let zip_iterator_checkers = inner_vals.iter().fold(qquote! {false}, |acc, ident| {
-			qquote! {#acc || (&#ident).__template_quote_is_iterable()}
-		});
+			});
+		// Panic at runtime (preserving historical behavior) if no var is iterable.
+		let checker = m_idents
+			.iter()
+			.fold(qquote! {false}, |acc, m| qquote! {#acc || #m});
+		// Left-nested tuple pattern of the user idents matching the left-nested
+		// `zip` chain of the bound iterators.
+		let (first_var, rest_vars) = vars.split_first().unwrap();
+		let (first_it, rest_it) = it_idents.split_first().unwrap();
+		let idents_in_tuple = rest_vars
+			.iter()
+			.fold(qquote! {#first_var}, |prev, next| qquote! {(#prev, #next)});
+		let zipped = rest_it
+			.iter()
+			.fold(qquote! {#first_it}, |prev, next| qquote! {#prev.zip(#next)});
 		qquote! {
 			{
 				#(let mut #val_nam = false;)*
-				use #path_quote::Repeat as #id_repeat;
-				if !(#zip_iterator_checkers) {
-					::core::panic!("Cannot iterate the group: #( {} )*", #debug_str);
+				#[allow(unused_imports)]
+				use #path_quote::__private::ext::{
+					RepAsIteratorExt as _, RepIteratorExt as _, RepToTokensExt as _,
+				};
+				#(#bindings)*
+				if !(#checker) {
+					#path_core::panic!("Cannot iterate the group: #( {} )*", #debug_str);
 				}
-				for #idents_in_tuple in #first .__template_quote__as_repeat() #(#zip_iterators)* {
+				for #idents_in_tuple in #zipped {
 					#(
 						if #val_nam { #code_sep }
 						#val_nam = true;
@@ -710,7 +744,7 @@ impl ParseEnvironment {
 								if group2.delimiter() == Delimiter::Brace =>
 							{
 								output.append_all(self.parse_conditional(
-									group.stream().into(),
+									group.stream(),
 									group2.stream().into_iter().collect(),
 									vals,
 									None,
@@ -739,7 +773,7 @@ impl ParseEnvironment {
 									if group2.delimiter() == Delimiter::Brace =>
 								{
 									output.append_all(self.parse_conditional(
-										group.stream().into(),
+										group.stream(),
 										group2.stream().into_iter().collect(),
 										vals,
 										Some(punct0),
@@ -806,18 +840,38 @@ pub fn quote_configured(input: TokenStream) -> TokenStream {
 	let mut input = VecDeque::new();
 	input.extend(input0.into_iter());
 	let env: ParseEnvironment = match input.pop_front() {
-		Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => {
-			syn::parse2(g.stream()).expect_or_abort("Bad config format")
-		}
-		_ => panic!("Bad config format"),
+		Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => syn::parse2(g.stream())
+			.unwrap_or_else(|e| abort!(g, "malformed `quote_configured!` config block: {}", e)),
+		Some(other) => abort!(
+			other,
+			"`quote_configured!` expects a `{{ key: path, ... }}` config block first"
+		),
+		None => abort!(
+			Span::call_site(),
+			"`quote_configured!` expects a `{{ key: path, ... }} => ...` invocation"
+		),
 	};
 	match input.pop_front() {
 		Some(TokenTree::Punct(p)) if p.as_char() == '=' && p.spacing() == Spacing::Joint => (),
-		_ => panic!("Bad config format"),
+		Some(other) => abort!(
+			other,
+			"`quote_configured!` expects `=>` after the config block"
+		),
+		None => abort!(
+			Span::call_site(),
+			"`quote_configured!` expects `=>` after the config block"
+		),
 	}
 	match input.pop_front() {
 		Some(TokenTree::Punct(p)) if p.as_char() == '>' && p.spacing() == Spacing::Alone => (),
-		_ => panic!("Bad config format"),
+		Some(other) => abort!(
+			other,
+			"`quote_configured!` expects `=>` after the config block"
+		),
+		None => abort!(
+			Span::call_site(),
+			"`quote_configured!` expects `=>` after the config block"
+		),
 	}
 	let mut stream = TokenStream2::new();
 	stream.extend(input);
@@ -851,11 +905,21 @@ pub fn quote_spanned(input: TokenStream) -> TokenStream {
 				}
 			}
 			Some(o) => span.extend(Some(o)),
-			None => panic!("wrong quote_spanned format"),
+			None => abort!(
+				Span::call_site(),
+				"`quote_spanned!` expects `<span-expr> => <tokens>` (no `=>` found)"
+			),
 		}
 	}
 	let mut env: ParseEnvironment = Default::default();
-	env.span = syn::parse2(span).expect_or_abort("Span must be expr");
+	let span_tokens = span.clone();
+	env.span = syn::parse2(span).unwrap_or_else(|e| {
+		abort!(
+			span_tokens,
+			"the `<span>` before `=>` in `quote_spanned!` must be an expression: {}",
+			e
+		)
+	});
 	let mut stream = TokenStream2::new();
 	stream.extend(input);
 	env.parse(stream).into()

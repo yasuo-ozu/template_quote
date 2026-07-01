@@ -1,10 +1,10 @@
 [package]
 name = "template-quote-impl"
-version = "0.4.4"
+version = "0.5.0"
 edition = "2021"
 rust-version = "1.56"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
-description = "A new-fasioned quote! macro implementation with pretty template-engine like syntax"
+description = "A new-fashioned quote! macro implementation with pretty template-engine-like syntax"
 license = "MIT"
 readme = "../README.md"
 homepage = "https://github.com/yasuo-ozu/template_quote"
