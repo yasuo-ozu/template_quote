@@ -44,6 +44,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.56.0
-      # Verifies the library compiles on the declared MSRV. Only builds (dev
-      # dependencies such as trybuild need a newer toolchain and are excluded).
-      - run: cargo build --workspace
+      # cargo 1.56 has no MSRV-aware resolution, so it would otherwise pick the
+      # latest dependency versions (which have since raised their own MSRV above
+      # 1.56). Pin the crate's declared minimums plus the transitive deps that
+      # bumped MSRV. This verifies the library builds on its declared MSRV with
+      # its minimum-supported dependencies. (`cargo build` does not compile the
+      # `trybuild` dev-dependency, so its newer toolchain requirement is moot.)
+      - name: Pin MSRV-compatible dependency versions
+        run: |
+          cargo generate-lockfile
+          cargo update -p quote --precise 1.0.35
+          cargo update -p proc-macro2 --precise 1.0.79
+          cargo update -p unicode-ident --precise 1.0.12
+      - run: cargo build --workspace --locked
