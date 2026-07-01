@@ -4,8 +4,8 @@ extern crate syn;
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use proc_macro2::{Delimiter, Literal, Punct, Spacing, Span, TokenTree};
-use proc_macro_error::ResultExt;
+use proc_macro2::{Delimiter, Group, Literal, Punct, Spacing, Span, TokenTree};
+use proc_macro_error::{abort, proc_macro_error, ResultExt};
 use quote::{quote as qquote, quote_spanned as qquote_spanned, TokenStreamExt};
 use std::collections::{HashSet, VecDeque};
 use syn::{parse_quote, Expr, Ident, Path, Token};
@@ -77,30 +77,24 @@ impl core::default::Default for ParseEnvironment {
 }
 
 fn eat_terminator(input: &mut VecDeque<TokenTree>) -> bool {
-	match (input.pop_front(), input.pop_front(), input.pop_front()) {
-		(Some(TokenTree::Punct(p1)), Some(TokenTree::Punct(p2)), None)
-			if p1.as_char() == '.'
-				&& p2.as_char() == '.'
-				&& p1.spacing() == Spacing::Joint
-				&& p2.spacing() == Spacing::Alone =>
+	// Recognize a `..` rest pattern (two joint `.` puncts) wherever it appears
+	// in a tuple/slice/struct pattern, not only when it is the final element.
+	match (input.pop_front(), input.pop_front()) {
+		(Some(TokenTree::Punct(p1)), Some(TokenTree::Punct(p2)))
+			if p1.as_char() == '.' && p2.as_char() == '.' && p1.spacing() == Spacing::Joint =>
 		{
-			return true;
+			true
 		}
-		(Some(tt1), Some(tt2), Some(tt3)) => {
-			input.push_front(tt3);
-			input.push_front(tt2);
-			input.push_front(tt1);
+		(a, b) => {
+			if let Some(b) = b {
+				input.push_front(b);
+			}
+			if let Some(a) = a {
+				input.push_front(a);
+			}
+			false
 		}
-		(Some(tt1), Some(tt2), None) => {
-			input.push_front(tt2);
-			input.push_front(tt1);
-		}
-		(Some(tt1), None, None) => {
-			input.push_front(tt1);
-		}
-		_ => (),
 	}
-	false
 }
 fn eat_comma(input: &mut VecDeque<TokenTree>) -> bool {
 	match input.pop_front() {
@@ -117,15 +111,36 @@ fn collect_ident(input: &mut VecDeque<TokenTree>) -> Result<Vec<Ident>, ()> {
 		mut input: VecDeque<TokenTree>,
 		ret: &mut Vec<Ident>,
 	) -> Result<(), ()> {
-		while input.len() > 0 && !eat_terminator(&mut input) {
+		while !input.is_empty() {
+			// A `..` rest pattern binds nothing; consume a following separator
+			// so remaining elements (e.g. `[a, .., b]`) are still parsed.
+			if eat_terminator(&mut input) {
+				if !input.is_empty() && !eat_comma(&mut input) {
+					return Err(());
+				}
+				continue;
+			}
 			ret.extend(collect_ident(&mut input)?);
-			if input.len() > 0 && !eat_comma(&mut input) {
+			if !input.is_empty() && !eat_comma(&mut input) {
 				return Err(());
 			}
 		}
 		Ok(())
 	}
 	let mut ret = Vec::new();
+	// Skip an optional leading `::` (absolute path in e.g. `::core::..::Some(x)`).
+	if matches!(
+		(input.front(), input.get(1)),
+		(Some(TokenTree::Punct(p1)), Some(TokenTree::Punct(p2)))
+			if p1.as_char() == ':' && p2.as_char() == ':' && p1.spacing() == Spacing::Joint
+	) {
+		input.pop_front();
+		input.pop_front();
+	}
+	// Skip binding modifiers: `ref`, `mut`, `ref mut`.
+	while matches!(input.front(), Some(TokenTree::Ident(id)) if id == "ref" || id == "mut") {
+		input.pop_front();
+	}
 	match input.pop_front() {
 		// Parse `let (..) = ..`
 		Some(TokenTree::Group(g))
@@ -164,28 +179,28 @@ fn collect_ident(input: &mut VecDeque<TokenTree>) -> Result<Vec<Ident>, ()> {
 				// Parse `let Ident { key: value, value2, ... } = ..`
 				Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => {
 					let mut inner: VecDeque<TokenTree> = g.stream().into_iter().collect();
-					while inner.len() > 0 && !eat_terminator(&mut inner) {
+					while !inner.is_empty() && !eat_terminator(&mut inner) {
+						// Skip `ref`/`mut` modifiers on shorthand fields.
+						while matches!(inner.front(), Some(TokenTree::Ident(id)) if id == "ref" || id == "mut")
+						{
+							inner.pop_front();
+						}
 						match inner.pop_front().unwrap() {
-							TokenTree::Ident(key) => match (inner.pop_front(), inner.pop_front()) {
-								(Some(TokenTree::Punct(colon)), Some(TokenTree::Ident(value)))
-									if colon.as_char() == ':'
-										&& colon.spacing() == Spacing::Alone =>
+							TokenTree::Ident(key) => {
+								// `key: <pattern>` (recurse into the sub-pattern, so
+								// non-ident values like `a: (x, y)` work) or the
+								// field-shorthand `key`.
+								if matches!(inner.front(), Some(TokenTree::Punct(colon)) if colon.as_char() == ':')
 								{
-									ret.push(value);
+									inner.pop_front(); // the field separator `:`
+									ret.extend(collect_ident(&mut inner)?);
+								} else {
+									ret.push(key);
 								}
-								(item1, item2) => {
-									if let Some(tt2) = item2 {
-										inner.push_front(tt2);
-									}
-									if let Some(tt1) = item1 {
-										inner.push_front(tt1);
-									}
-									ret.push(key)
-								}
-							},
+							}
 							_ => return Err(()),
 						}
-						if inner.len() > 0 && !eat_comma(&mut inner) {
+						if !inner.is_empty() && !eat_comma(&mut inner) {
 							return Err(());
 						}
 					}
@@ -235,6 +250,17 @@ fn collect_punct_in_expr(mut stream: VecDeque<TokenTree>) -> (Vec<Ident>, VecDeq
 					output.push_back(TokenTree::Punct(punct));
 				}
 			},
+			// Recurse into groups so that `#var` nested inside a group (e.g.
+			// `(#v).iter()` or `matches!(#v, _)`) is interpolated just like at
+			// the top level, instead of being left as a literal `# v`.
+			TokenTree::Group(group) => {
+				let (inner_ids, inner) =
+					collect_punct_in_expr(group.stream().into_iter().collect());
+				ids.extend(inner_ids);
+				let mut new_group = Group::new(group.delimiter(), inner.into_iter().collect());
+				new_group.set_span(group.span());
+				output.push_back(TokenTree::Group(new_group));
+			}
 			o => output.push_back(o),
 		}
 	}
@@ -247,9 +273,7 @@ fn hash_will_be_processed(next: Option<&TokenTree>, rest: &VecDeque<TokenTree>) 
 		Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Brace => true,
 		Some(TokenTree::Group(group)) if group.delimiter() == Delimiter::Parenthesis => {
 			match (rest.front(), rest.get(1)) {
-				(Some(TokenTree::Group(group2)), _)
-					if group2.delimiter() == Delimiter::Brace =>
-				{
+				(Some(TokenTree::Group(group2)), _) if group2.delimiter() == Delimiter::Brace => {
 					true
 				}
 				(Some(TokenTree::Punct(punct)), _) if punct.as_char() == '*' => true,
@@ -268,10 +292,6 @@ fn hash_will_be_processed(next: Option<&TokenTree>, rest: &VecDeque<TokenTree>) 
 		}
 		_ => false,
 	}
-}
-
-fn keep_joint_before_processed_hash(punct: char) -> bool {
-	matches!(punct, '+' | '-' | ':' | '<' | '>')
 }
 
 impl ParseEnvironment {
@@ -540,6 +560,9 @@ impl ParseEnvironment {
 			})
 			.collect::<Vec<_>>()
 			.join(" ");
+		// Snapshot the repetition-group tokens before `input` is consumed below,
+		// so a diagnostic can point directly at the offending group.
+		let group_tokens: TokenStream2 = input.iter().cloned().collect();
 		let mut inner_vals = HashSet::new();
 		let inner_output = self.parse_inner(input, &mut inner_vals, inline_expr_dict);
 		let code_sep = sep.map(|sep| self.emit_punct(&Punct::new(sep.as_char(), Spacing::Alone)));
@@ -550,7 +573,13 @@ impl ParseEnvironment {
 			.collect::<Vec<_>>();
 		vals.extend(inner_vals.iter().cloned());
 		let mut iter = inner_vals.iter();
-		let first = iter.next().expect("Iterative vals not found");
+		let first = iter.next().unwrap_or_else(|| {
+			abort!(
+				group_tokens,
+				"Repetition group `#( {} )*` contains no interpolation variable (`#var`)", debug_str;
+				note = "a repetition needs at least one `#var` inside it to drive the iteration"
+			)
+		});
 		let idents_in_tuple = iter.clone().cloned().fold(qquote! {#first}, |prev, next| {
 			qquote! {
 				(#prev, #next)
@@ -645,26 +674,31 @@ impl ParseEnvironment {
 						if group.delimiter() == Delimiter::Brace =>
 					{
 						let inner = group.stream().into_iter().collect::<VecDeque<_>>();
-						// Check if the inner stream ends with ';'
-						let is_expr = match inner.get(core::cmp::max(0, inner.len() - 1)) {
-							Some(TokenTree::Punct(p)) if p.as_char() == ';' => false,
-							_ => true,
-						};
-						let (appending_ids, inner) = collect_punct_in_expr(inner);
-						for id in appending_ids {
-							vals.insert(id);
-						}
-						let stream: TokenStream2 = inner.into_iter().collect();
-						if is_expr {
-							output.append_all(qquote! {
-								<_ as #path_quote::ToTokens>::to_tokens(&{
-									#stream
-								}, &mut #id_stream);
-							});
+						if inner.is_empty() {
+							// `#{}` expands to nothing.
 						} else {
-							output.append_all(qquote! {
-								{ #stream }
-							});
+							// The inner block is a statement block when it ends with
+							// `;`, otherwise it is an expression to interpolate.
+							let is_expr = !matches!(
+								inner.back(),
+								Some(TokenTree::Punct(p)) if p.as_char() == ';'
+							);
+							let (appending_ids, inner) = collect_punct_in_expr(inner);
+							for id in appending_ids {
+								vals.insert(id);
+							}
+							let stream: TokenStream2 = inner.into_iter().collect();
+							if is_expr {
+								output.append_all(qquote! {
+									<_ as #path_quote::ToTokens>::to_tokens(&{
+										#stream
+									}, &mut #id_stream);
+								});
+							} else {
+								output.append_all(qquote! {
+									{ #stream }
+								});
+							}
 						}
 					}
 					('#', Some(TokenTree::Group(group)))
@@ -731,9 +765,14 @@ impl ParseEnvironment {
 						}
 					}
 					(_, o) => {
+						// A punct written `Joint` immediately before an interpolation
+						// that will be processed must be downgraded to `Alone`: the
+						// macro cannot know what the interpolation expands to, and a
+						// `Joint` punct would silently fuse with a leading punct in
+						// the expansion (e.g. `-` + `>` -> `->`). This matches the
+						// spacing behaviour of the upstream `quote!` macro.
 						let adjust_joint_before_hash = punct.spacing() == Spacing::Joint
 							&& matches!(o, Some(TokenTree::Punct(ref p)) if p.as_char() == '#')
-							&& !keep_joint_before_processed_hash(punct.as_char())
 							&& hash_will_be_processed(input.front(), &input);
 						if let Some(o) = o {
 							input.push_front(o);
@@ -754,12 +793,14 @@ impl ParseEnvironment {
 }
 
 #[proc_macro]
+#[proc_macro_error]
 pub fn quote(input: TokenStream) -> TokenStream {
 	let env: ParseEnvironment = Default::default();
 	env.parse(input.into()).into()
 }
 
 #[proc_macro]
+#[proc_macro_error]
 pub fn quote_configured(input: TokenStream) -> TokenStream {
 	let input0: TokenStream2 = input.into();
 	let mut input = VecDeque::new();
@@ -784,6 +825,7 @@ pub fn quote_configured(input: TokenStream) -> TokenStream {
 }
 
 #[proc_macro]
+#[proc_macro_error]
 pub fn quote_spanned(input: TokenStream) -> TokenStream {
 	let input0: TokenStream2 = input.into();
 	let mut input = VecDeque::new();

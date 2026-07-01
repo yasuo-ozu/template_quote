@@ -23,7 +23,7 @@ fn test_conditional_if() {
 			}
 		)*
 	};
-	assert_eq!("-1i32 10i32 -2i32 13i32 -4i32 19i32", tokens.to_string());
+	assert_eq!("- 1i32 10i32 - 2i32 13i32 - 4i32 19i32", tokens.to_string());
 }
 
 #[test]

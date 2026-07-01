@@ -75,7 +75,7 @@ fn test_advanced() {
 	let expected = concat!(
 		"struct SerializeWith < 'a , T > where T : Serialize { ",
 		"value : & 'a String , ",
-		"phantom : :: std :: marker :: PhantomData <Cow < 'a , str > >, ",
+		"phantom : :: std :: marker :: PhantomData < Cow < 'a , str > >, ",
 		"} ",
 		"impl < 'a , T > :: serde :: Serialize for SerializeWith < 'a , T > where T : Serialize { ",
 		"fn serialize < S > (& self , s : & mut S) -> Result < () , S :: Error > ",
@@ -86,7 +86,7 @@ fn test_advanced() {
 		"} ",
 		"SerializeWith { ",
 		"value : self . x , ",
-		"phantom : :: std :: marker :: PhantomData ::<Cow < 'a , str > >, ",
+		"phantom : :: std :: marker :: PhantomData ::< Cow < 'a , str > >, ",
 		"}"
 	);
 
