@@ -1,0 +1,8 @@
+[package]
+name = "template-quote-test-no-proc-macro2"
+version = "0.0.0"
+edition = "2018"
+publish = false
+
+[dev-dependencies]
+template-quote = { path = "../.." }

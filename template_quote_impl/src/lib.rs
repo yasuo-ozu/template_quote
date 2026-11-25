@@ -143,6 +143,7 @@ impl ParseEnvironment {
 			)
 		};
 		let mut this: ParseEnvironment = Default::default();
+		let mut span = None;
 		let mut input: VecDeque<TokenTree> = block.stream().into_iter().collect();
 		while let Some(tt) = input.pop_front() {
 			let key = match tt {
@@ -152,17 +153,18 @@ impl ParseEnvironment {
 			match input.pop_front() {
 				Some(TokenTree::Punct(p)) if p.as_char() == ':' => (),
 				Some(other) => return Err(malformed(other.span(), "expected `:`")),
-				None => return Err(malformed(block.span(), "expected `:`")),
+				None => return Err(malformed(key.span(), "expected `:`")),
 			}
 			match key.to_string().as_str() {
 				"proc_macro2" => this.path_proc_macro2 = parse_config_path(&mut input, &key)?,
 				"quote" => this.path_quote = parse_config_path(&mut input, &key)?,
 				"core" => this.path_core = parse_config_path(&mut input, &key)?,
 				"span" => {
-					this.span = take_config_expr(&mut input);
-					if this.span.is_empty() {
+					let expr = take_config_expr(&mut input);
+					if expr.is_empty() {
 						return Err(malformed(key.span(), "expected an expression for `span`"));
 					}
+					span = Some(expr);
 					continue;
 				}
 				other => {
@@ -178,6 +180,8 @@ impl ParseEnvironment {
 				None => (),
 			}
 		}
+		let path_proc_macro2 = &this.path_proc_macro2;
+		this.span = span.unwrap_or_else(|| qquote! { #path_proc_macro2::Span::call_site() });
 		Ok(this)
 	}
 }
@@ -1012,58 +1016,5 @@ fn expand_quote_configured(input: TokenStream2) -> Result<TokenStream2, Error> {
 		Some(other) => return Err(arrow_error(other.span())),
 		None => return Err(arrow_error(Span::call_site())),
 	}
-	env.parse(input.into_iter().collect())
-}
-
-#[proc_macro]
-pub fn quote_spanned(input: TokenStream) -> TokenStream {
-	expand_quote_spanned(input.into())
-		.unwrap_or_else(Error::into_compile_error)
-		.into()
-}
-
-fn expand_quote_spanned(input: TokenStream2) -> Result<TokenStream2, Error> {
-	let mut input: VecDeque<TokenTree> = input.into_iter().collect();
-	let mut span = TokenStream2::new(); // Tokens before '=>'
-	let arrow_span = loop {
-		match input.pop_front() {
-			Some(TokenTree::Punct(p)) if p.as_char() == '=' && p.spacing() == Spacing::Joint => {
-				match input.pop_front() {
-					Some(TokenTree::Punct(p2))
-						if p2.as_char() == '>' && p2.spacing() == Spacing::Alone =>
-					{
-						// Found '=>'.
-						break p.span();
-					}
-					Some(o) => {
-						span.extend(Some(TokenTree::Punct(p)));
-						input.push_front(o);
-					}
-					None => {
-						span.extend(Some(TokenTree::Punct(p)));
-					}
-				}
-			}
-			Some(o) => span.extend(Some(o)),
-			None => {
-				return Err(Error::new(
-					Span::call_site(),
-					"`quote_spanned!` expects `<span-expr> => <tokens>` (no `=>` found)",
-				))
-			}
-		}
-	};
-	if span.is_empty() {
-		return Err(Error::new(
-			arrow_span,
-			"`quote_spanned!` expects a span expression before `=>`",
-		));
-	}
-	// The span expression is spliced as `(#span)` into the generated code, so
-	// a malformed expression is reported by rustc at its own tokens.
-	let env = ParseEnvironment {
-		span,
-		..Default::default()
-	};
 	env.parse(input.into_iter().collect())
 }

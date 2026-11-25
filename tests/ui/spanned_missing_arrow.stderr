@@ -1,4 +1,4 @@
-error: `quote_spanned!` expects `<span-expr> => <tokens>` (no `=>` found)
+error: `quote_spanned!` expects `<span-expr> => <tokens>`
  --> tests/ui/spanned_missing_arrow.rs:5:13
   |
 5 |     let _ = quote_spanned! { no arrow here };
