@@ -5,6 +5,12 @@ to [Semantic Versioning](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+
+- A default `proc-macro2` feature that gates template-quote's own
+  `proc-macro2` dependency. Without it, the generated code refers to
+  `::proc_macro2` unless `quote_configured!` sets the `proc_macro2` path.
+
 ### Fixed
 
 - The macros no longer require the calling crate to depend on `proc-macro2`

@@ -1,18 +1,44 @@
 #![doc(html_logo_url = "https://raw.githubusercontent.com/yasuo-ozu/template_quote/main/logo.png")]
 #![doc = include_str!("../README.md")]
 
-/// See module-level doc.
+#[cfg(feature = "proc-macro2")]
+#[doc(hidden)]
 #[macro_export]
-macro_rules! quote {
-	($($tt:tt)*) => {
+macro_rules! __template_quote_configured {
+	({ $($config:tt)* } => $($tt:tt)*) => {
 		$crate::__private::quote_configured! {
 			{
 				proc_macro2: $crate::__private::proc_macro2,
 				quote: $crate,
 				core: $crate::__private::core,
+				$($config)*
 			} =>
 			$($tt)*
 		}
+	};
+}
+
+#[cfg(not(feature = "proc-macro2"))]
+#[doc(hidden)]
+#[macro_export]
+macro_rules! __template_quote_configured {
+	({ $($config:tt)* } => $($tt:tt)*) => {
+		$crate::__private::quote_configured! {
+			{
+				quote: $crate,
+				core: $crate::__private::core,
+				$($config)*
+			} =>
+			$($tt)*
+		}
+	};
+}
+
+/// See module-level doc.
+#[macro_export]
+macro_rules! quote {
+	($($tt:tt)*) => {
+		$crate::__template_quote_configured! { {} => $($tt)* }
 	};
 }
 
@@ -21,7 +47,8 @@ macro_rules! quote {
 /// code refers to. Every key is optional; the accepted keys and their defaults
 /// are:
 ///
-/// - `proc_macro2` — path to the `proc-macro2` crate (default: re-exported)
+/// - `proc_macro2` — path to the `proc-macro2` crate (default: re-exported with
+///   the `proc-macro2` feature, otherwise `::proc_macro2`)
 /// - `quote` — path to this crate's re-exports (default: this crate)
 /// - `core` — path to `core` (default: re-exported)
 /// - `span` — an expression giving the span for emitted tokens (default
@@ -44,15 +71,7 @@ macro_rules! quote {
 #[macro_export]
 macro_rules! quote_configured {
 	({ $($config:tt)* } => $($tt:tt)*) => {
-		$crate::__private::quote_configured! {
-			{
-				proc_macro2: $crate::__private::proc_macro2,
-				quote: $crate,
-				core: $crate::__private::core,
-				$($config)*
-			} =>
-			$($tt)*
-		}
+		$crate::__template_quote_configured! { { $($config)* } => $($tt)* }
 	};
 	($($tt:tt)*) => {
 		$crate::__private::quote_configured! { $($tt)* }
@@ -70,15 +89,7 @@ macro_rules! quote_configured {
 #[macro_export]
 macro_rules! quote_spanned {
 	($span:expr => $($tt:tt)*) => {
-		$crate::__private::quote_configured! {
-			{
-				proc_macro2: $crate::__private::proc_macro2,
-				quote: $crate,
-				core: $crate::__private::core,
-				span: $span,
-			} =>
-			$($tt)*
-		}
+		$crate::__template_quote_configured! { { span: $span } => $($tt)* }
 	};
 	($($tt:tt)*) => {
 		$crate::__private::quote_spanned! { $($tt)* }
@@ -93,6 +104,7 @@ pub use quote::ToTokens;
 pub mod __private {
 	pub use crate::imp::ext;
 	pub use core;
+	#[cfg(feature = "proc-macro2")]
 	pub use proc_macro2;
 	pub use template_quote_impl::{quote_configured, quote_spanned};
 }

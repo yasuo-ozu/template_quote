@@ -16,6 +16,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - run: cargo test --workspace
+      - run: cargo test -p template-quote --no-default-features
 
   clippy:
     name: clippy
