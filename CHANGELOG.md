@@ -3,7 +3,10 @@
 All notable changes to this project are documented here. This project adheres
 to [Semantic Versioning](https://semver.org).
 
-## [Unreleased]
+## [0.6.0] — 2026-11-26
+
+A minor release because `template-quote-impl` drops its `quote_spanned` proc
+macro; the public API of `template-quote` itself is unchanged.
 
 ### Added
 
@@ -16,6 +19,8 @@ to [Semantic Versioning](https://semver.org).
 - `template-quote-impl` no longer provides a `quote_spanned` proc macro;
   `quote_spanned!` forwards to `quote_configured` and reports malformed input
   itself.
+- The `{ ... } =>` config block of `quote_configured!` is optional; without
+  it, the defaults apply.
 
 ### Fixed
 
