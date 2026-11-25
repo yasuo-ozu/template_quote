@@ -180,9 +180,6 @@ impl ParseEnvironment {
 				None => (),
 			}
 		}
-		// Without an explicit `span`, use the configured `proc_macro2` path so
-		// the generated code never names `::proc_macro2` behind the caller's
-		// back.
 		let path_proc_macro2 = &this.path_proc_macro2;
 		this.span = span.unwrap_or_else(|| qquote! { #path_proc_macro2::Span::call_site() });
 		Ok(this)

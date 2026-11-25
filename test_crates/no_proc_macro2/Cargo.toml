@@ -1,5 +1,3 @@
-# Regression test for issue #2: the macros must work in a crate that does not
-# depend on `proc-macro2`, so `::proc_macro2` does not resolve here.
 [package]
 name = "template-quote-test-no-proc-macro2"
 version = "0.0.0"

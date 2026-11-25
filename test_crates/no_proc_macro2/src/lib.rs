@@ -1,6 +1,4 @@
-//! Regression test for issue #2 (`could not find proc_macro2 in the list of
-//! imported crates`). This crate deliberately does not depend on
-//! `proc-macro2`, so the generated code must reach it through `template_quote`.
+//! Regression test for #2: this crate does not depend on `proc-macro2`.
 
 #[cfg(test)]
 mod tests {
@@ -13,8 +11,6 @@ mod tests {
 
 	#[test]
 	fn quote_all_token_kinds() {
-		// Idents, raw idents, puncts, groups, literals, repetition with a
-		// separator and a conditional.
 		let items = vec![1i32, 2, 3];
 		let flag = true;
 		let tokens = quote! {
