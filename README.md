@@ -53,7 +53,7 @@ cargo add template-quote proc-macro2
 ```
 
 The generated code refers to [`proc_macro2`](https://docs.rs/proc-macro2/), so
-add it alongside `template-quote`. MSRV is **Rust 1.56**.
+add it alongside `template-quote`. MSRV is **Rust 1.54**.
 
 ## How it compares
 

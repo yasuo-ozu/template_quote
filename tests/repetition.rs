@@ -72,7 +72,7 @@ fn test_repetition_same_iter_twice() {
 fn test_repetition_iterators() {
 	let a = vec!["a", "b", "c"].into_iter();
 	let b = 2..6;
-	let c = [5, 6, 7].into_iter().map(|_| X);
+	let c = [5, 6, 7].iter().map(|_| X);
 	let q = quote! {
 		#(#a #b #c)*
 	};

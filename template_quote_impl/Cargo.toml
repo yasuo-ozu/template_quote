@@ -1,8 +1,8 @@
 [package]
 name = "template-quote-impl"
 version = "0.5.1"
-edition = "2021"
-rust-version = "1.56"
+edition = "2018"
+rust-version = "1.54"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
 description = "A new-fashioned quote! macro implementation with pretty template-engine-like syntax"
 license = "MIT"

@@ -3,6 +3,12 @@
 All notable changes to this project are documented here. This project adheres
 to [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+- Lowered the MSRV from Rust 1.56 to 1.54 (both crates now use edition 2018).
+  1.54 is the floor because the crate docs embed the README via
+  `#![doc = include_str!(..)]`.
+
 ## [0.5.1] — 2026-11-26
 
 ### Dependencies

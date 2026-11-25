@@ -31,21 +31,21 @@ fn nonempty_inline_group_still_works() {
 fn boundary_minus_does_not_form_arrow() {
 	let x = quote!(> z); // interpolation starting with `>`
 	let s = quote!( a -#x ).to_string();
-	assert!(!s.contains("->"), "`-` fused with `>` into `->`: {s}");
+	assert!(!s.contains("->"), "`-` fused with `>` into `->`: {}", s);
 }
 
 #[test]
 fn boundary_colon_does_not_form_triple_colon() {
 	let p = quote!(::std::vec::Vec); // interpolation starting with `:`
 	let s = quote!( let x:#p = y; ).to_string();
-	assert!(!s.contains(":::"), "`:` fused into `:::`: {s}");
+	assert!(!s.contains(":::"), "`:` fused into `:::`: {}", s);
 }
 
 #[test]
 fn boundary_plus_does_not_form_double_plus() {
 	let x = quote!(+ y); // interpolation starting with `+`
 	let s = quote!( a +#x ).to_string();
-	assert!(!s.contains("++"), "`+` fused into `++`: {s}");
+	assert!(!s.contains("++"), "`+` fused into `++`: {}", s);
 }
 
 #[test]

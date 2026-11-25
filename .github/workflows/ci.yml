@@ -39,14 +39,14 @@ jobs:
       - run: cargo fmt --all --check
 
   msrv:
-    name: build (MSRV 1.56)
+    name: build (MSRV 1.54)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.56.0
-      # cargo 1.56 has no MSRV-aware resolution, so it would otherwise pick the
+      - uses: dtolnay/rust-toolchain@1.54.0
+      # cargo 1.54 has no MSRV-aware resolution, so it would otherwise pick the
       # latest dependency versions (which have since raised their own MSRV above
-      # 1.56). Pin the crate's declared minimums plus the transitive deps that
+      # 1.54). Pin the crate's declared minimums plus the transitive deps that
       # bumped MSRV. This verifies the library builds on its declared MSRV with
       # its minimum-supported dependencies. The `trybuild` dev-dependency is
       # dropped first: `cargo build` never compiles it, but its own dependencies
