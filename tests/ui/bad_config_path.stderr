@@ -1,0 +1,5 @@
+error: expected a path for `quote`
+ --> tests/ui/bad_config_path.rs:5:42
+  |
+5 |     let _ = quote_configured! { { quote: 1 } => x };
+  |                                          ^

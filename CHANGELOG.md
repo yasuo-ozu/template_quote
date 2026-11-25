@@ -38,6 +38,17 @@ Contains **breaking changes** — see *Migrating from 0.4* below.
   with same-named user variables.
 - The repetition guard honors the configurable `core` path in
   `quote_configured!`.
+- A non-path value for `proc_macro2` / `quote` / `core` in
+  `quote_configured!` now reports "expected a path for `…`" at the value
+  (previously the misleading "Bad config name").
+
+### Dependencies
+
+- Dropped the `syn` and `proc-macro-error` dependencies; the proc-macro crate
+  now depends only on `proc-macro2` and `quote`. Diagnostics are emitted as
+  `compile_error!` on every toolchain, so nightly no longer reports an extra
+  "expected expression" error after each one. A malformed `span` expression is
+  now reported by rustc at the offending tokens rather than by the macro.
 
 ### Docs & internal
 

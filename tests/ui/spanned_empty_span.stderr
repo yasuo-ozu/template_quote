@@ -1,0 +1,5 @@
+error: `quote_spanned!` expects a span expression before `=>`
+ --> tests/ui/spanned_empty_span.rs:5:30
+  |
+5 |     let _ = quote_spanned! { => x };
+  |                              ^

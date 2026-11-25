@@ -1,60 +1,181 @@
 extern crate proc_macro;
 extern crate proc_macro2;
-extern crate syn;
 
 use proc_macro::TokenStream;
 use proc_macro2::TokenStream as TokenStream2;
-use proc_macro2::{Delimiter, Group, Literal, Punct, Spacing, Span, TokenTree};
-use proc_macro_error::{abort, proc_macro_error};
+use proc_macro2::{Delimiter, Group, Ident, Literal, Punct, Spacing, Span, TokenTree};
 use quote::{quote as qquote, quote_spanned as qquote_spanned, TokenStreamExt};
 use std::collections::{HashSet, VecDeque};
-use syn::{parse_quote, Expr, Ident, Path, Token};
+
+/// A compile error reported over the span range `first..last`.
+///
+/// It is emitted as a `compile_error!` invocation whose leading tokens carry
+/// `first` and whose argument group carries `last`, so rustc highlights the
+/// whole range on stable.
+struct Error {
+	first: Span,
+	last: Span,
+	message: String,
+}
+
+impl Error {
+	fn new(span: Span, message: impl Into<String>) -> Self {
+		Self {
+			first: span,
+			last: span,
+			message: message.into(),
+		}
+	}
+
+	/// An error covering `tokens` (or the macro call site if it is empty).
+	fn spanned(tokens: TokenStream2, message: impl Into<String>) -> Self {
+		let mut iter = tokens.into_iter();
+		let first = iter.next().map_or_else(Span::call_site, |tt| tt.span());
+		let last = iter.last().map_or(first, |tt| tt.span());
+		Self {
+			first,
+			last,
+			message: message.into(),
+		}
+	}
+
+	fn with_note(mut self, note: &str) -> Self {
+		self.message = format!("{}\n\n  = note: {}\n\n", self.message, note);
+		self
+	}
+
+	fn into_compile_error(self) -> TokenStream2 {
+		let mut message = Literal::string(&self.message);
+		message.set_span(self.last);
+		let group = qquote_spanned! { self.last => { #message } };
+		qquote_spanned! { self.first => ::core::compile_error! #group }
+	}
+}
 
 /// The parser for `quote!` macro.
 ///
 /// this struct has some global configs to be initialized using
-/// `Default::default()` or `syn::parse::Parse::parse()`. User can specify
+/// `Default::default()` or `ParseEnvironment::from_config()`. User can specify
 /// configs using `quote_configured!` macro.
 struct ParseEnvironment {
-	span: Expr,
-	path_proc_macro2: Path,
-	path_quote: Path,
-	path_core: Path,
+	/// Expression evaluating to the span of emitted tokens.
+	span: TokenStream2,
+	path_proc_macro2: TokenStream2,
+	path_quote: TokenStream2,
+	path_core: TokenStream2,
 	id_stream: Ident,
 	id_counter: Ident,
 }
 
-impl syn::parse::Parse for ParseEnvironment {
-	fn parse(input: syn::parse::ParseStream<'_>) -> syn::parse::Result<Self> {
-		// Read comma-separated `key = value` fields
-		let mut fields: Vec<(Ident, Expr)> = Vec::new();
-		while !input.is_empty() {
-			let ident = input.parse()?;
-			input.parse::<Token![:]>()?;
-			let expr = input.parse()?;
-			fields.push((ident, expr));
-			if !input.is_empty() {
-				input.parse::<Token![,]>()?;
+fn is_punct(tt: Option<&TokenTree>, ch: char) -> bool {
+	matches!(tt, Some(TokenTree::Punct(p)) if p.as_char() == ch)
+}
+
+/// Whether `input` starts with a `::` path separator.
+fn starts_with_path_sep(input: &VecDeque<TokenTree>) -> bool {
+	matches!(
+		input.front(),
+		Some(TokenTree::Punct(p)) if p.as_char() == ':' && p.spacing() == Spacing::Joint
+	) && is_punct(input.get(1), ':')
+}
+
+/// Parses a config-block path `[::] seg (:: seg)*`, where `seg` is an ident
+/// (including `crate`, `self`, `super` and `$crate`) or an invisible group
+/// produced by a `macro_rules!` fragment such as `$p:path`.
+fn parse_config_path(input: &mut VecDeque<TokenTree>, key: &Ident) -> Result<TokenStream2, Error> {
+	let mut path = TokenStream2::new();
+	if starts_with_path_sep(input) {
+		path.extend(input.drain(..2));
+	}
+	loop {
+		match input.pop_front() {
+			Some(TokenTree::Ident(id)) => path.append(id),
+			Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::None => path.append(g),
+			Some(other) => {
+				return Err(Error::new(
+					other.span(),
+					format!("expected a path for `{}`", key),
+				))
+			}
+			None => {
+				return Err(Error::new(
+					key.span(),
+					format!("expected a path for `{}`", key),
+				))
 			}
 		}
+		if !starts_with_path_sep(input) {
+			return Ok(path);
+		}
+		path.extend(input.drain(..2));
+	}
+}
+
+/// Takes the tokens of a config-block expression value.
+///
+/// The value extends up to the `,` that is followed by the next `key:` (or by
+/// the end of the block), so top-level commas inside the expression, as in
+/// `f::<A, B>()` or `|a, b| ..`, do not end it.
+fn take_config_expr(input: &mut VecDeque<TokenTree>) -> TokenStream2 {
+	let mut expr = TokenStream2::new();
+	while let Some(tt) = input.pop_front() {
+		if is_punct(Some(&tt), ',') {
+			let next_is_key = matches!(input.front(), Some(TokenTree::Ident(_)))
+				&& is_punct(input.get(1), ':')
+				&& !(matches!(input.get(1), Some(TokenTree::Punct(p)) if p.spacing() == Spacing::Joint)
+					&& is_punct(input.get(2), ':'));
+			if input.is_empty() || next_is_key {
+				break;
+			}
+		}
+		expr.append(tt);
+	}
+	expr
+}
+
+impl ParseEnvironment {
+	/// Parses the `{ key: value, ... }` config block of `quote_configured!`.
+	fn from_config(block: &Group) -> Result<Self, Error> {
+		let malformed = |span: Span, message: &str| {
+			Error::new(
+				span,
+				format!("malformed `quote_configured!` config block: {}", message),
+			)
+		};
 		let mut this: ParseEnvironment = Default::default();
-		for (id, expr) in fields {
-			match (id.to_string().as_str(), expr) {
-				("proc_macro2", Expr::Path(pat)) => {
-					this.path_proc_macro2 = pat.path;
+		let mut input: VecDeque<TokenTree> = block.stream().into_iter().collect();
+		while let Some(tt) = input.pop_front() {
+			let key = match tt {
+				TokenTree::Ident(key) => key,
+				other => return Err(malformed(other.span(), "expected a config name")),
+			};
+			match input.pop_front() {
+				Some(TokenTree::Punct(p)) if p.as_char() == ':' => (),
+				Some(other) => return Err(malformed(other.span(), "expected `:`")),
+				None => return Err(malformed(block.span(), "expected `:`")),
+			}
+			match key.to_string().as_str() {
+				"proc_macro2" => this.path_proc_macro2 = parse_config_path(&mut input, &key)?,
+				"quote" => this.path_quote = parse_config_path(&mut input, &key)?,
+				"core" => this.path_core = parse_config_path(&mut input, &key)?,
+				"span" => {
+					this.span = take_config_expr(&mut input);
+					if this.span.is_empty() {
+						return Err(malformed(key.span(), "expected an expression for `span`"));
+					}
+					continue;
 				}
-				("quote", Expr::Path(pat)) => {
-					this.path_quote = pat.path;
+				other => {
+					return Err(malformed(
+						key.span(),
+						&format!("Bad config name: {}", other),
+					))
 				}
-				("core", Expr::Path(pat)) => {
-					this.path_core = pat.path;
-				}
-				("span", expr) => {
-					this.span = expr;
-				}
-				(key, _) => {
-					return Err(input.error(format!("Bad config name: {}", key)));
-				}
+			}
+			match input.pop_front() {
+				Some(TokenTree::Punct(p)) if p.as_char() == ',' => (),
+				Some(other) => return Err(malformed(other.span(), "expected `,`")),
+				None => (),
 			}
 		}
 		Ok(this)
@@ -64,10 +185,10 @@ impl syn::parse::Parse for ParseEnvironment {
 impl core::default::Default for ParseEnvironment {
 	fn default() -> Self {
 		Self {
-			span: parse_quote! { ::proc_macro2::Span::call_site() },
-			path_proc_macro2: parse_quote! { ::proc_macro2 },
-			path_quote: parse_quote! { ::template_quote },
-			path_core: parse_quote! { ::core },
+			span: qquote! { ::proc_macro2::Span::call_site() },
+			path_proc_macro2: qquote! { ::proc_macro2 },
+			path_quote: qquote! { ::template_quote },
+			path_core: qquote! { ::core },
 			id_stream: Ident::new("__template_quote_stream", Span::mixed_site()),
 			id_counter: Ident::new("__template_quote_idcnt", Span::mixed_site()),
 		}
@@ -400,37 +521,41 @@ impl ParseEnvironment {
 		vals: &mut HashSet<Ident>,
 		sep: Option<Punct>,
 		inline_expr_dict: &mut Vec<(Ident, TokenStream2, Span)>,
-	) -> TokenStream2 {
-		fn parse_if_inner(
-			mut cond: VecDeque<TokenTree>,
-		) -> (Vec<Ident>, Vec<Ident>, Vec<TokenTree>) {
+	) -> Result<TokenStream2, Error> {
+		const MALFORMED_CONDITIONAL: &str = "malformed conditional in template (expected `if`, \
+		                                     `else`, `let`, `while` or `for`)";
+		type IfInner = (Vec<Ident>, Vec<Ident>, Vec<TokenTree>);
+		fn parse_if_inner(mut cond: VecDeque<TokenTree>) -> Result<IfInner, Error> {
 			let span_ts: TokenStream2 = cond.iter().cloned().collect();
 			let mut bak: Vec<_> = cond.iter().cloned().collect();
 			match cond.pop_front() {
 				Some(TokenTree::Ident(id_let)) if id_let == "let" => {
-					let removing_ids = collect_ident_eq(&mut cond).unwrap_or_else(|_| {
-						abort!(span_ts, "malformed `if let` conditional in template")
-					});
+					let removing_ids = collect_ident_eq(&mut cond).map_err(|_| {
+						Error::spanned(span_ts, "malformed `if let` conditional in template")
+					})?;
 					bak.truncate(bak.len() - cond.len());
 					let (appending_ids, rem) = collect_punct_in_expr(cond);
 					bak.extend(rem);
-					(removing_ids, appending_ids, bak)
+					Ok((removing_ids, appending_ids, bak))
 				}
 				Some(o) => {
 					cond.push_front(o);
 					bak.truncate(bak.len() - cond.len());
 					let (appending_ids, rem) = collect_punct_in_expr(cond);
 					bak.extend(rem);
-					(vec![], appending_ids, bak)
+					Ok((vec![], appending_ids, bak))
 				}
-				None => abort!(span_ts, "empty `if` conditional in template"),
+				None => Err(Error::spanned(
+					span_ts,
+					"empty `if` conditional in template",
+				)),
 			}
 		}
 		let mut cond: VecDeque<TokenTree> = conditional.clone().into_iter().collect();
 		let cond_len = cond.len();
 		let (removing_ids, appending_ids, cond) = match (cond.pop_front(), sep.is_some()) {
 			(Some(TokenTree::Ident(id)), false) if id == "if" => {
-				let (removing_ids, appending_ids, rem) = parse_if_inner(cond);
+				let (removing_ids, appending_ids, rem) = parse_if_inner(cond)?;
 				(
 					removing_ids,
 					appending_ids,
@@ -441,7 +566,7 @@ impl ParseEnvironment {
 				match cond.pop_front() {
 					// else if
 					Some(TokenTree::Ident(id_if)) if id_if == "if" => {
-						let (removing_ids, appending_ids, rem) = parse_if_inner(cond);
+						let (removing_ids, appending_ids, rem) = parse_if_inner(cond)?;
 						(
 							removing_ids,
 							appending_ids,
@@ -452,18 +577,18 @@ impl ParseEnvironment {
 						)
 					}
 					Some(_) => {
-						abort!(
-							conditional.clone(),
-							"malformed `else` in template (expected `else` or `else if`)"
-						)
+						return Err(Error::spanned(
+							conditional,
+							"malformed `else` in template (expected `else` or `else if`)",
+						))
 					}
 					None => (vec![], vec![], conditional),
 				}
 			}
 			(Some(TokenTree::Ident(id)), false) if id == "let" => {
-				let removing_ids = collect_ident_eq(&mut cond).unwrap_or_else(|_| {
-					abort!(conditional.clone(), "malformed `let` binding in template")
-				});
+				let removing_ids = collect_ident_eq(&mut cond).map_err(|_| {
+					Error::spanned(conditional.clone(), "malformed `let` binding in template")
+				})?;
 				let n = cond_len - cond.len();
 				let (appending_ids, rem) = collect_punct_in_expr(cond);
 				let conditional: TokenStream2 =
@@ -472,12 +597,12 @@ impl ParseEnvironment {
 			}
 			(Some(TokenTree::Ident(id)), _) if id == "while" => match cond.pop_front() {
 				Some(TokenTree::Ident(id_let)) if id_let == "let" => {
-					let removing_ids = collect_ident_eq(&mut cond).unwrap_or_else(|_| {
-						abort!(
+					let removing_ids = collect_ident_eq(&mut cond).map_err(|_| {
+						Error::spanned(
 							conditional.clone(),
-							"malformed `while let` loop in template"
+							"malformed `while let` loop in template",
 						)
-					});
+					})?;
 					let n = cond_len - cond.len();
 					let (appending_ids, rem) = collect_punct_in_expr(cond);
 					let conditional: TokenStream2 =
@@ -492,7 +617,12 @@ impl ParseEnvironment {
 						conditional.clone().into_iter().take(n).chain(rem).collect();
 					(vec![], appending_ids, conditional)
 				}
-				None => abort!(conditional.clone(), "empty `while` conditional in template"),
+				None => {
+					return Err(Error::spanned(
+						conditional,
+						"empty `while` conditional in template",
+					))
+				}
 			},
 			(Some(TokenTree::Ident(id)), _) if id == "for" => {
 				match (collect_ident(&mut cond), cond.pop_front()) {
@@ -503,18 +633,17 @@ impl ParseEnvironment {
 							conditional.clone().into_iter().take(n).chain(rem).collect();
 						(v, appending_ids, conditional)
 					}
-					_ => abort!(
-						conditional.clone(),
-						"malformed `for` loop in template (expected `for <pat> in <expr>`)"
-					),
+					_ => {
+						return Err(Error::spanned(
+							conditional,
+							"malformed `for` loop in template (expected `for <pat> in <expr>`)",
+						))
+					}
 				}
 			}
-			_ => abort!(
-				conditional.clone(),
-				"malformed conditional in template (expected `if`, `else`, `let`, `while` or `for`)"
-			),
+			_ => return Err(Error::spanned(conditional, MALFORMED_CONDITIONAL)),
 		};
-		let inner = self.parse_inner(input, vals, inline_expr_dict);
+		let inner = self.parse_inner(input, vals, inline_expr_dict)?;
 		for id in removing_ids {
 			vals.remove(&id);
 		}
@@ -524,7 +653,7 @@ impl ParseEnvironment {
 		if let Some(sep) = sep {
 			let code_sep = self.emit_punct(&sep);
 			let id_counter = &self.id_counter;
-			qquote! {
+			Ok(qquote! {
 				{
 					let mut #id_counter = false;
 					#cond {
@@ -533,13 +662,13 @@ impl ParseEnvironment {
 						#inner
 					}
 				}
-			}
+			})
 		} else {
-			qquote! {
+			Ok(qquote! {
 				#cond {
 					#inner
 				}
-			}
+			})
 		}
 	}
 
@@ -549,7 +678,7 @@ impl ParseEnvironment {
 		vals: &mut HashSet<Ident>,
 		sep: Option<Punct>,
 		inline_expr_dict: &mut Vec<(Ident, TokenStream2, Span)>,
-	) -> TokenStream2 {
+	) -> Result<TokenStream2, Error> {
 		let Self {
 			path_quote,
 			path_core,
@@ -578,7 +707,7 @@ impl ParseEnvironment {
 		// so a diagnostic can point directly at the offending group.
 		let group_tokens: TokenStream2 = input.iter().cloned().collect();
 		let mut inner_vals = HashSet::new();
-		let inner_output = self.parse_inner(input, &mut inner_vals, inline_expr_dict);
+		let inner_output = self.parse_inner(input, &mut inner_vals, inline_expr_dict)?;
 		let code_sep = sep.map(|sep| self.emit_punct(&Punct::new(sep.as_char(), Spacing::Alone)));
 		let val_nam = code_sep
 			.as_ref()
@@ -588,11 +717,14 @@ impl ParseEnvironment {
 		vals.extend(inner_vals.iter().cloned());
 		let vars: Vec<Ident> = inner_vals.iter().cloned().collect();
 		if vars.is_empty() {
-			abort!(
+			return Err(Error::spanned(
 				group_tokens,
-				"Repetition group `#( {} )*` contains no interpolation variable (`#var`)", debug_str;
-				note = "a repetition needs at least one `#var` inside it to drive the iteration"
-			);
+				format!(
+					"Repetition group `#( {} )*` contains no interpolation variable (`#var`)",
+					debug_str
+				),
+			)
+			.with_note("a repetition needs at least one `#var` inside it to drive the iteration"));
 		}
 		// Fresh call-site helper idents per distinct interpolation var: the bound
 		// iterator and its runtime "is iterable" flag.
@@ -626,7 +758,7 @@ impl ParseEnvironment {
 		let zipped = rest_it
 			.iter()
 			.fold(qquote! {#first_it}, |prev, next| qquote! {#prev.zip(#next)});
-		qquote! {
+		Ok(qquote! {
 			{
 				#(let mut #val_nam = false;)*
 				#[allow(unused_imports)]
@@ -645,10 +777,10 @@ impl ParseEnvironment {
 					#inner_output
 				}
 			}
-		}
+		})
 	}
 
-	fn parse(&self, input: TokenStream2) -> TokenStream2 {
+	fn parse(&self, input: TokenStream2) -> Result<TokenStream2, Error> {
 		let Self {
 			path_proc_macro2,
 			id_stream,
@@ -656,7 +788,7 @@ impl ParseEnvironment {
 		} = self;
 		let mut hs = HashSet::new();
 		let mut dict = Vec::new();
-		let result = self.parse_inner(input.into_iter().collect(), &mut hs, &mut dict);
+		let result = self.parse_inner(input.into_iter().collect(), &mut hs, &mut dict)?;
 		let inline_vals_code =
 			dict.into_iter()
 				.fold(TokenStream2::new(), |acc, (id, inner, span)| {
@@ -665,14 +797,14 @@ impl ParseEnvironment {
 						let #id = { #inner };
 					}
 				});
-		qquote! {
+		Ok(qquote! {
 			{
 				let mut #id_stream= #path_proc_macro2::TokenStream::new();
 				#inline_vals_code
 				{ #result }
 				#id_stream
 			}
-		}
+		})
 	}
 
 	fn parse_inner(
@@ -680,7 +812,7 @@ impl ParseEnvironment {
 		mut input: VecDeque<TokenTree>,
 		vals: &mut HashSet<Ident>,
 		inline_expr_dict: &mut Vec<(Ident, TokenStream2, Span)>,
-	) -> TokenStream2 {
+	) -> Result<TokenStream2, Error> {
 		let Self {
 			path_quote,
 			id_stream,
@@ -691,7 +823,7 @@ impl ParseEnvironment {
 			match token {
 				TokenTree::Group(group) => {
 					let inner = group.stream().into_iter().collect();
-					let result = self.parse_inner(inner, vals, inline_expr_dict);
+					let result = self.parse_inner(inner, vals, inline_expr_dict)?;
 					let result = self.emit_group(&group.delimiter(), result);
 					output.append_all(result);
 				}
@@ -749,7 +881,7 @@ impl ParseEnvironment {
 									vals,
 									None,
 									inline_expr_dict,
-								));
+								)?);
 							}
 							// # ( ... ) *
 							Some(TokenTree::Punct(punct)) if punct.as_char() == '*' => output
@@ -758,7 +890,7 @@ impl ParseEnvironment {
 									vals,
 									None,
 									inline_expr_dict,
-								)),
+								)?),
 							Some(TokenTree::Punct(punct0)) => match input.pop_front() {
 								// # ( ... ) [SEP] *
 								Some(TokenTree::Punct(punct1)) if punct1.as_char() == '*' => output
@@ -767,7 +899,7 @@ impl ParseEnvironment {
 										vals,
 										Some(punct0),
 										inline_expr_dict,
-									)),
+									)?),
 								// # ( ... ) [SEP] { ... }
 								Some(TokenTree::Group(group2))
 									if group2.delimiter() == Delimiter::Brace =>
@@ -778,7 +910,7 @@ impl ParseEnvironment {
 										vals,
 										Some(punct0),
 										inline_expr_dict,
-									));
+									)?);
 								}
 								o => {
 									if let Some(o) = o {
@@ -822,78 +954,82 @@ impl ParseEnvironment {
 				TokenTree::Literal(o) => output.append_all(self.emit_literal(&o)),
 			}
 		}
-		output
+		Ok(output)
 	}
 }
 
 #[proc_macro]
-#[proc_macro_error]
 pub fn quote(input: TokenStream) -> TokenStream {
 	let env: ParseEnvironment = Default::default();
-	env.parse(input.into()).into()
+	env.parse(input.into())
+		.unwrap_or_else(Error::into_compile_error)
+		.into()
 }
 
 #[proc_macro]
-#[proc_macro_error]
 pub fn quote_configured(input: TokenStream) -> TokenStream {
-	let input0: TokenStream2 = input.into();
-	let mut input = VecDeque::new();
-	input.extend(input0.into_iter());
-	let env: ParseEnvironment = match input.pop_front() {
-		Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => syn::parse2(g.stream())
-			.unwrap_or_else(|e| abort!(g, "malformed `quote_configured!` config block: {}", e)),
-		Some(other) => abort!(
-			other,
-			"`quote_configured!` expects a `{{ key: path, ... }}` config block first"
-		),
-		None => abort!(
-			Span::call_site(),
-			"`quote_configured!` expects a `{{ key: path, ... }} => ...` invocation"
-		),
+	expand_quote_configured(input.into())
+		.unwrap_or_else(Error::into_compile_error)
+		.into()
+}
+
+fn expand_quote_configured(input: TokenStream2) -> Result<TokenStream2, Error> {
+	let mut input: VecDeque<TokenTree> = input.into_iter().collect();
+	let env = match input.pop_front() {
+		Some(TokenTree::Group(g)) if g.delimiter() == Delimiter::Brace => {
+			ParseEnvironment::from_config(&g)?
+		}
+		Some(other) => {
+			return Err(Error::new(
+				other.span(),
+				"`quote_configured!` expects a `{ key: path, ... }` config block first",
+			))
+		}
+		None => {
+			return Err(Error::new(
+				Span::call_site(),
+				"`quote_configured!` expects a `{ key: path, ... } => ...` invocation",
+			))
+		}
+	};
+	let arrow_error = |span: Span| {
+		Error::new(
+			span,
+			"`quote_configured!` expects `=>` after the config block",
+		)
 	};
 	match input.pop_front() {
 		Some(TokenTree::Punct(p)) if p.as_char() == '=' && p.spacing() == Spacing::Joint => (),
-		Some(other) => abort!(
-			other,
-			"`quote_configured!` expects `=>` after the config block"
-		),
-		None => abort!(
-			Span::call_site(),
-			"`quote_configured!` expects `=>` after the config block"
-		),
+		Some(other) => return Err(arrow_error(other.span())),
+		None => return Err(arrow_error(Span::call_site())),
 	}
 	match input.pop_front() {
 		Some(TokenTree::Punct(p)) if p.as_char() == '>' && p.spacing() == Spacing::Alone => (),
-		Some(other) => abort!(
-			other,
-			"`quote_configured!` expects `=>` after the config block"
-		),
-		None => abort!(
-			Span::call_site(),
-			"`quote_configured!` expects `=>` after the config block"
-		),
+		Some(other) => return Err(arrow_error(other.span())),
+		None => return Err(arrow_error(Span::call_site())),
 	}
-	let mut stream = TokenStream2::new();
-	stream.extend(input);
-	env.parse(stream).into()
+	env.parse(input.into_iter().collect())
 }
 
 #[proc_macro]
-#[proc_macro_error]
 pub fn quote_spanned(input: TokenStream) -> TokenStream {
-	let input0: TokenStream2 = input.into();
-	let mut input = VecDeque::new();
-	input.extend(input0.into_iter());
+	expand_quote_spanned(input.into())
+		.unwrap_or_else(Error::into_compile_error)
+		.into()
+}
+
+fn expand_quote_spanned(input: TokenStream2) -> Result<TokenStream2, Error> {
+	let mut input: VecDeque<TokenTree> = input.into_iter().collect();
 	let mut span = TokenStream2::new(); // Tokens before '=>'
-	loop {
+	let arrow_span = loop {
 		match input.pop_front() {
 			Some(TokenTree::Punct(p)) if p.as_char() == '=' && p.spacing() == Spacing::Joint => {
 				match input.pop_front() {
-					Some(TokenTree::Punct(p))
-						if p.as_char() == '>' && p.spacing() == Spacing::Alone =>
+					Some(TokenTree::Punct(p2))
+						if p2.as_char() == '>' && p2.spacing() == Spacing::Alone =>
 					{
 						// Found '=>'.
-						break;
+						break p.span();
 					}
 					Some(o) => {
 						span.extend(Some(TokenTree::Punct(p)));
@@ -905,22 +1041,25 @@ pub fn quote_spanned(input: TokenStream) -> TokenStream {
 				}
 			}
 			Some(o) => span.extend(Some(o)),
-			None => abort!(
-				Span::call_site(),
-				"`quote_spanned!` expects `<span-expr> => <tokens>` (no `=>` found)"
-			),
+			None => {
+				return Err(Error::new(
+					Span::call_site(),
+					"`quote_spanned!` expects `<span-expr> => <tokens>` (no `=>` found)",
+				))
+			}
 		}
+	};
+	if span.is_empty() {
+		return Err(Error::new(
+			arrow_span,
+			"`quote_spanned!` expects a span expression before `=>`",
+		));
 	}
-	let mut env: ParseEnvironment = Default::default();
-	let span_tokens = span.clone();
-	env.span = syn::parse2(span).unwrap_or_else(|e| {
-		abort!(
-			span_tokens,
-			"the `<span>` before `=>` in `quote_spanned!` must be an expression: {}",
-			e
-		)
-	});
-	let mut stream = TokenStream2::new();
-	stream.extend(input);
-	env.parse(stream).into()
+	// The span expression is spliced as `(#span)` into the generated code, so
+	// a malformed expression is reported by rustc at its own tokens.
+	let env = ParseEnvironment {
+		span,
+		..Default::default()
+	};
+	env.parse(input.into_iter().collect())
 }
