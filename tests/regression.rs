@@ -168,7 +168,9 @@ fn repeat_type_impl_both_borrow_and_totokens() {
 
 	let both = Both(vec![1, 2, 3]);
 	let i = 0..3; // bounding iterator
-			   // Compiles (no E0283) and treats `both` as a single repeated ToTokens value.
+
+	// Compiles (no E0283) and treats `both` as a single ToTokens value that is
+	// repeated on every iteration.
 	let tokens = quote! { #(#i #both)* };
 	assert_eq!(tokens.to_string(), "0i32 Both 1i32 Both 2i32 Both");
 }
@@ -182,7 +184,8 @@ fn repeat_type_impl_both_borrow_and_totokens() {
 
 #[test]
 fn hygienic_internal_idents_no_user_collision() {
-	// User variables whose names deliberately match the macro's internal locals.
+	// User variables whose names deliberately match the macro's internal
+	// locals.
 	let __template_quote_stream = 111i32;
 	let __template_quote_idcnt = 222i32;
 	let __template_quote_it_0 = 333i32;
@@ -190,7 +193,8 @@ fn hygienic_internal_idents_no_user_collision() {
 
 	let x = [1i32, 2i32, 3i32];
 	// A separated repetition exercises the counter (`id_counter`) and the
-	// per-var iterator helpers (`__template_quote_it_*` / `__template_quote_m_*`).
+	// per-var iterator helpers (`__template_quote_it_*` /
+	// `__template_quote_m_*`).
 	let tokens = quote! { #(#x),* };
 	assert_eq!(tokens.to_string(), "1i32 , 2i32 , 3i32");
 

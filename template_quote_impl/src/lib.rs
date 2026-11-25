@@ -247,7 +247,8 @@ fn collect_ident(input: &mut VecDeque<TokenTree>) -> Result<Vec<Ident>, ()> {
 		Ok(())
 	}
 	let mut ret = Vec::new();
-	// Skip an optional leading `::` (absolute path in e.g. `::core::..::Some(x)`).
+	// Skip an optional leading `::` (absolute path in e.g.
+	// `::core::..::Some(x)`).
 	if matches!(
 		(input.front(), input.get(1)),
 		(Some(TokenTree::Punct(p1)), Some(TokenTree::Punct(p2)))
@@ -306,12 +307,12 @@ fn collect_ident(input: &mut VecDeque<TokenTree>) -> Result<Vec<Ident>, ()> {
 						}
 						match inner.pop_front() {
 							Some(TokenTree::Ident(key)) => {
-								// `key: <pattern>` (recurse into the sub-pattern, so
-								// non-ident values like `a: (x, y)` work) or the
-								// field-shorthand `key`.
+								// Either `key: <pattern>` (recurse into the
+								// sub-pattern, so non-ident values such as
+								// `a: (x, y)` work) or the shorthand `key`.
 								if matches!(inner.front(), Some(TokenTree::Punct(colon)) if colon.as_char() == ':')
 								{
-									inner.pop_front(); // the field separator `:`
+									inner.pop_front(); // the `:` separator
 									ret.extend(collect_ident(&mut inner)?);
 								} else {
 									ret.push(key);
@@ -703,8 +704,8 @@ impl ParseEnvironment {
 			})
 			.collect::<Vec<_>>()
 			.join(" ");
-		// Snapshot the repetition-group tokens before `input` is consumed below,
-		// so a diagnostic can point directly at the offending group.
+		// Snapshot the repetition-group tokens before `input` is consumed
+		// below, so a diagnostic can point directly at the offending group.
 		let group_tokens: TokenStream2 = input.iter().cloned().collect();
 		let mut inner_vals = HashSet::new();
 		let inner_output = self.parse_inner(input, &mut inner_vals, inline_expr_dict)?;
@@ -726,8 +727,8 @@ impl ParseEnvironment {
 			)
 			.with_note("a repetition needs at least one `#var` inside it to drive the iteration"));
 		}
-		// Fresh call-site helper idents per distinct interpolation var: the bound
-		// iterator and its runtime "is iterable" flag.
+		// Fresh call-site helper idents per distinct interpolation var: the
+		// bound iterator and its runtime "is iterable" flag.
 		let it_idents: Vec<Ident> = (0..vars.len())
 			.map(|i| Ident::new(&format!("__template_quote_it_{}", i), Span::mixed_site()))
 			.collect();
@@ -744,7 +745,8 @@ impl ParseEnvironment {
 					let (mut #it, #m) = (#var).__template_quote_into_iter();
 				}
 			});
-		// Panic at runtime (preserving historical behavior) if no var is iterable.
+		// Panic at runtime (preserving historical behavior) if no var is
+		// iterable.
 		let checker = m_idents
 			.iter()
 			.fold(qquote! {false}, |acc, m| qquote! {#acc || #m});
@@ -843,8 +845,9 @@ impl ParseEnvironment {
 						if inner.is_empty() {
 							// `#{}` expands to nothing.
 						} else {
-							// The inner block is a statement block when it ends with
-							// `;`, otherwise it is an expression to interpolate.
+							// The inner block is a statement block when it ends
+							// with `;`, otherwise it is an expression to
+							// interpolate.
 							let is_expr = !matches!(
 								inner.back(),
 								Some(TokenTree::Punct(p)) if p.as_char() == ';'
@@ -931,11 +934,12 @@ impl ParseEnvironment {
 						}
 					}
 					(_, o) => {
-						// A punct written `Joint` immediately before an interpolation
-						// that will be processed must be downgraded to `Alone`: the
-						// macro cannot know what the interpolation expands to, and a
-						// `Joint` punct would silently fuse with a leading punct in
-						// the expansion (e.g. `-` + `>` -> `->`). This matches the
+						// A punct written `Joint` immediately before an
+						// interpolation that will be processed must be
+						// downgraded to `Alone`: the macro cannot know what the
+						// interpolation expands to, and a `Joint` punct would
+						// silently fuse with a leading punct in the expansion
+						// (e.g. `-` + `>` -> `->`). This matches the
 						// spacing behaviour of the upstream `quote!` macro.
 						let adjust_joint_before_hash = punct.spacing() == Spacing::Joint
 							&& matches!(o, Some(TokenTree::Punct(ref p)) if p.as_char() == '#')
