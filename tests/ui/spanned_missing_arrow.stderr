@@ -4,4 +4,4 @@ error: `quote_spanned!` expects `<span-expr> => <tokens>` (no `=>` found)
 5 |     let _ = quote_spanned! { no arrow here };
   |             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
   |
-  = note: this error originates in the macro `quote_spanned` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `$crate::__private::quote_spanned` which comes from the expansion of the macro `quote_spanned` (in Nightly builds, run with -Z macro-backtrace for more info)

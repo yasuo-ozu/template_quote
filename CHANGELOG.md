@@ -3,6 +3,21 @@
 All notable changes to this project are documented here. This project adheres
 to [Semantic Versioning](https://semver.org).
 
+## [Unreleased]
+
+### Fixed
+
+- The macros no longer require the calling crate to depend on `proc-macro2`
+  ([#2](https://github.com/yasuo-ozu/template_quote/issues/2)). `quote!`,
+  `quote_spanned!` and `quote_configured!` are now `#[macro_export]`
+  `macro_rules!` wrappers that pass `$crate`-based paths to the proc macros, so
+  the generated code reaches `proc_macro2` and `core` through hidden
+  re-exports in `template_quote`. Keys set explicitly in `quote_configured!`
+  still take precedence.
+- Without an explicit `span`, `quote_configured!` now builds the default
+  `Span::call_site()` from the configured `proc_macro2` path instead of always
+  using `::proc_macro2`.
+
 ## [0.5.2] — 2026-11-26
 
 - Lowered the MSRV from Rust 1.56 to 1.54 (both crates now use edition 2018).

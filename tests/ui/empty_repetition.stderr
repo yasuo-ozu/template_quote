@@ -7,4 +7,4 @@ error: Repetition group `#(  )*` contains no interpolation variable (`#var`)
 5 |     let _ = quote! { #()* };
   |             ^^^^^^^^^^^^^^^
   |
-  = note: this error originates in the macro `quote` (in Nightly builds, run with -Z macro-backtrace for more info)
+  = note: this error originates in the macro `$crate::__private::quote_configured` which comes from the expansion of the macro `quote` (in Nightly builds, run with -Z macro-backtrace for more info)

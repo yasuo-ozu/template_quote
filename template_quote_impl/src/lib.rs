@@ -143,6 +143,7 @@ impl ParseEnvironment {
 			)
 		};
 		let mut this: ParseEnvironment = Default::default();
+		let mut span = None;
 		let mut input: VecDeque<TokenTree> = block.stream().into_iter().collect();
 		while let Some(tt) = input.pop_front() {
 			let key = match tt {
@@ -152,17 +153,18 @@ impl ParseEnvironment {
 			match input.pop_front() {
 				Some(TokenTree::Punct(p)) if p.as_char() == ':' => (),
 				Some(other) => return Err(malformed(other.span(), "expected `:`")),
-				None => return Err(malformed(block.span(), "expected `:`")),
+				None => return Err(malformed(key.span(), "expected `:`")),
 			}
 			match key.to_string().as_str() {
 				"proc_macro2" => this.path_proc_macro2 = parse_config_path(&mut input, &key)?,
 				"quote" => this.path_quote = parse_config_path(&mut input, &key)?,
 				"core" => this.path_core = parse_config_path(&mut input, &key)?,
 				"span" => {
-					this.span = take_config_expr(&mut input);
-					if this.span.is_empty() {
+					let expr = take_config_expr(&mut input);
+					if expr.is_empty() {
 						return Err(malformed(key.span(), "expected an expression for `span`"));
 					}
+					span = Some(expr);
 					continue;
 				}
 				other => {
@@ -178,6 +180,11 @@ impl ParseEnvironment {
 				None => (),
 			}
 		}
+		// Without an explicit `span`, use the configured `proc_macro2` path so
+		// the generated code never names `::proc_macro2` behind the caller's
+		// back.
+		let path_proc_macro2 = &this.path_proc_macro2;
+		this.span = span.unwrap_or_else(|| qquote! { #path_proc_macro2::Span::call_site() });
 		Ok(this)
 	}
 }

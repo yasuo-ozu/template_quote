@@ -1,5 +1,5 @@
 error: malformed `quote_configured!` config block: expected `:`
- --> tests/ui/bad_config.rs:5:33
+ --> tests/ui/bad_config.rs:5:35
   |
 5 |     let _ = quote_configured! { { bogus } => x };
-  |                                 ^^^^^^^^^
+  |                                   ^^^^^

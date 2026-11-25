@@ -50,11 +50,12 @@ let tokens = quote! {
 ## Install
 
 ```sh
-cargo add template-quote proc-macro2
+cargo add template-quote
 ```
 
-The generated code refers to [`proc_macro2`](https://docs.rs/proc-macro2/), so
-add it alongside `template-quote`. MSRV is **Rust 1.54**.
+The macros return a [`proc_macro2::TokenStream`](https://docs.rs/proc-macro2/);
+add `proc-macro2` as well if you name its types (`TokenStream`, `Span`, …) in
+your own code. MSRV is **Rust 1.54**.
 
 ## How it compares
 

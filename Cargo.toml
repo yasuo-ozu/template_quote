@@ -17,11 +17,11 @@ repository = "https://github.com/yasuo-ozu/template_quote"
 [dependencies]
 template-quote-impl = { path = "./template_quote_impl", version = "0.5.2" }
 quote = "1.0"
+proc-macro2 = "1.0.40"
 
 [dev-dependencies]
-proc-macro2 = "1.0.40"
 trybuild = "1.0"
 
 [workspace]
-members = [".", "template_quote_impl"]
+members = [".", "template_quote_impl", "test_crates/no_proc_macro2"]
 resolver = "2"
