@@ -3,7 +3,26 @@
 All notable changes to this project are documented here. This project adheres
 to [Semantic Versioning](https://semver.org).
 
-## [0.5.0] — unreleased
+## [0.5.1] — 2026-11-26
+
+### Dependencies
+
+- Dropped the `syn` and `proc-macro-error` dependencies; the proc-macro crate
+  now depends only on `proc-macro2` and `quote`. Diagnostics are emitted as
+  `compile_error!` on every toolchain, so nightly no longer reports an extra
+  "expected expression" error after each one. A malformed `span` expression is
+  now reported by rustc at the offending tokens rather than by the macro.
+- Relaxed the version requirements to `quote >= 1.0` (was `1.0.35`) and
+  `proc-macro2 >= 1.0.40` (was `1.0.79`). 1.0.40 is the oldest `proc-macro2`
+  with `Ident::new_raw`, which the code generated for raw identifiers needs.
+
+### Fixed
+
+- A non-path value for `proc_macro2` / `quote` / `core` in
+  `quote_configured!` now reports "expected a path for `…`" at the value
+  (previously the misleading "Bad config name").
+
+## [0.5.0] — 2026-07-01
 
 Fixes a batch of correctness, diagnostic, and hygiene bugs found in an audit.
 Contains **breaking changes** — see *Migrating from 0.4* below.
@@ -38,26 +57,12 @@ Contains **breaking changes** — see *Migrating from 0.4* below.
   with same-named user variables.
 - The repetition guard honors the configurable `core` path in
   `quote_configured!`.
-- A non-path value for `proc_macro2` / `quote` / `core` in
-  `quote_configured!` now reports "expected a path for `…`" at the value
-  (previously the misleading "Bad config name").
 
 ### Dependencies
 
 - Dropped the `syn` and `proc-macro-error` dependencies; the proc-macro crate
   now depends only on `proc-macro2` and `quote`. Diagnostics are emitted as
-  `compile_error!` on every toolchain, so nightly no longer reports an extra
-  "expected expression" error after each one. A malformed `span` expression is
-  now reported by rustc at the offending tokens rather than by the macro.
-- Relaxed the version requirements to `quote >= 1.0` (was `1.0.35`) and
-  `proc-macro2 >= 1.0.40` (was `1.0.79`). 1.0.40 is the oldest `proc-macro2`
-  with `Ident::new_raw`, which the code generated for raw identifiers needs.
-
-### Docs & internal
-
-- New README (logo, quick start, feature overview); corrected examples and
-  intra-doc links; documented `quote_spanned!` / `quote_configured!`.
-- Added trybuild UI tests plus hygiene/pattern/spanned/configured regression
+  `compild UI tests plus hygiene/pattern/spanned/configured regression
   tests; the crate is clippy- and rustfmt-clean, with CI.
 
 ### Migrating from 0.4

@@ -1,6 +1,6 @@
 [package]
 name = "template-quote"
-version = "0.5.0"
+version = "0.5.1"
 edition = "2021"
 rust-version = "1.56"
 authors = ["Yasuo Ozu <yasuo@ozu.email>"]
@@ -15,7 +15,7 @@ repository = "https://github.com/yasuo-ozu/template_quote"
 
 
 [dependencies]
-template-quote-impl = { path = "./template_quote_impl", version = "0.5.0" }
+template-quote-impl = { path = "./template_quote_impl", version = "0.5.1" }
 quote = "1.0"
 
 [dev-dependencies]
