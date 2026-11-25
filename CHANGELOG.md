@@ -49,6 +49,9 @@ Contains **breaking changes** — see *Migrating from 0.4* below.
   `compile_error!` on every toolchain, so nightly no longer reports an extra
   "expected expression" error after each one. A malformed `span` expression is
   now reported by rustc at the offending tokens rather than by the macro.
+- Relaxed the version requirements to `quote >= 1.0` (was `1.0.35`) and
+  `proc-macro2 >= 1.0.40` (was `1.0.79`). 1.0.40 is the oldest `proc-macro2`
+  with `Ident::new_raw`, which the code generated for raw identifiers needs.
 
 ### Docs & internal
 

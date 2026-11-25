@@ -48,12 +48,14 @@ jobs:
       # latest dependency versions (which have since raised their own MSRV above
       # 1.56). Pin the crate's declared minimums plus the transitive deps that
       # bumped MSRV. This verifies the library builds on its declared MSRV with
-      # its minimum-supported dependencies. (`cargo build` does not compile the
-      # `trybuild` dev-dependency, so its newer toolchain requirement is moot.)
+      # its minimum-supported dependencies. The `trybuild` dev-dependency is
+      # dropped first: `cargo build` never compiles it, but its own dependencies
+      # (serde_derive) would otherwise force a newer `quote` into the lockfile.
       - name: Pin MSRV-compatible dependency versions
         run: |
+          sed -i '/^trybuild/d' Cargo.toml
           cargo generate-lockfile
-          cargo update -p quote --precise 1.0.35
-          cargo update -p proc-macro2 --precise 1.0.79
+          cargo update -p quote --precise 1.0.0
+          cargo update -p proc-macro2 --precise 1.0.40
           cargo update -p unicode-ident --precise 1.0.12
       - run: cargo build --workspace --locked
