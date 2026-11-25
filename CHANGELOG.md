@@ -11,6 +11,12 @@ to [Semantic Versioning](https://semver.org).
   `proc-macro2` dependency. Without it, the generated code refers to
   `::proc_macro2` unless `quote_configured!` sets the `proc_macro2` path.
 
+### Changed
+
+- `template-quote-impl` no longer provides a `quote_spanned` proc macro;
+  `quote_spanned!` forwards to `quote_configured` and reports malformed input
+  itself.
+
 ### Fixed
 
 - The macros no longer require the calling crate to depend on `proc-macro2`

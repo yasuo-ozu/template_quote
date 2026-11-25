@@ -1,5 +1,7 @@
-error: `quote_spanned!` expects a span expression before `=>`
- --> tests/ui/spanned_empty_span.rs:5:30
+error: `quote_spanned!` expects `<span-expr> => <tokens>`
+ --> tests/ui/spanned_empty_span.rs:5:13
   |
 5 |     let _ = quote_spanned! { => x };
-  |                              ^
+  |             ^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `quote_spanned` (in Nightly builds, run with -Z macro-backtrace for more info)

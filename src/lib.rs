@@ -16,6 +16,9 @@ macro_rules! __template_quote_configured {
 			$($tt)*
 		}
 	};
+	($($tt:tt)*) => {
+		$crate::__template_quote_configured! { {} => $($tt)* }
+	};
 }
 
 #[cfg(not(feature = "proc-macro2"))]
@@ -31,6 +34,9 @@ macro_rules! __template_quote_configured {
 			} =>
 			$($tt)*
 		}
+	};
+	($($tt:tt)*) => {
+		$crate::__template_quote_configured! { {} => $($tt)* }
 	};
 }
 
@@ -70,11 +76,8 @@ macro_rules! quote {
 /// ```
 #[macro_export]
 macro_rules! quote_configured {
-	({ $($config:tt)* } => $($tt:tt)*) => {
-		$crate::__template_quote_configured! { { $($config)* } => $($tt)* }
-	};
 	($($tt:tt)*) => {
-		$crate::__private::quote_configured! { $($tt)* }
+		$crate::__template_quote_configured! { $($tt)* }
 	};
 }
 
@@ -92,7 +95,9 @@ macro_rules! quote_spanned {
 		$crate::__template_quote_configured! { { span: $span } => $($tt)* }
 	};
 	($($tt:tt)*) => {
-		$crate::__private::quote_spanned! { $($tt)* }
+		$crate::__private::core::compile_error! {
+			"`quote_spanned!` expects `<span-expr> => <tokens>`"
+		}
 	};
 }
 
@@ -106,7 +111,7 @@ pub mod __private {
 	pub use core;
 	#[cfg(feature = "proc-macro2")]
 	pub use proc_macro2;
-	pub use template_quote_impl::{quote_configured, quote_spanned};
+	pub use template_quote_impl::quote_configured;
 }
 
 mod imp {
