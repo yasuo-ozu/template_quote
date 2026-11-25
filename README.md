@@ -7,6 +7,7 @@
 
 [![crates.io](https://img.shields.io/crates/v/template-quote.svg)](https://crates.io/crates/template-quote)
 [![docs.rs](https://docs.rs/template-quote/badge.svg)](https://docs.rs/template-quote)
+[![MSRV](https://img.shields.io/crates/msrv/template-quote.svg)](https://crates.io/crates/template-quote)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](https://opensource.org/licenses/MIT)
 [![CI](https://github.com/yasuo-ozu/template_quote/actions/workflows/ci.yml/badge.svg)](https://github.com/yasuo-ozu/template_quote/actions/workflows/ci.yml)
 
